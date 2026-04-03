@@ -1,0 +1,7 @@
+export { default as SessionsPage }      from '@/pages/sessions/SessionsPage'
+export { default as CheckInsPage }      from '@/pages/checkins/CheckInsPage'
+export { default as AssessmentsPage }   from '@/pages/assessments/AssessmentsPage'
+export { default as InterventionsPage } from '@/pages/interventions/InterventionsPage'
+export { default as AIAssistantPage }   from '@/pages/ai/AIAssistantPage'
+export { default as ReportsPage }       from '@/pages/reports/ReportsPage'
+export { default as SettingsPage }      from '@/pages/settings/SettingsPage'

@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-brand: 17 24 39;
+  }
+  * { box-sizing: border-box; }
+  body {
+    @apply antialiased bg-gray-50 text-gray-900;
+    font-family: 'DM Sans', sans-serif;
+  }
+}
+
+@layer utilities {
+  .bg-gradient-spps {
+    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+  }
+  .text-gradient-spps {
+    background: linear-gradient(135deg, #1e3a5f 0%, #2563eb 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .font-display {
+    font-family: 'Playfair Display', serif;
+  }
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
