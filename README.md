@@ -1,7 +1,6 @@
 # SPPS — Sport Psychology Practitioner Suite
 
-> HIPAA-compliant practice management for elite sport psychologists.  
-> Built for high-performance environments — SAI, ABTP MindLab, and beyond.
+> HIPAA-compliant practice management for elite sport psychologists.
 
 ---
 
@@ -9,18 +8,20 @@
 
 SPPS is a full-stack web application for sport psychology practitioners to manage athletes, log sessions, administer proprietary psychological assessments, track wellbeing check-ins, log interventions, and generate AI-assisted clinical reports — all within a HIPAA and GDPR-aligned compliance framework.
 
+The suite also includes advanced modules for neurocognitive profiling (Senaptec), psychophysiology data entry (EEG · EMG · HRV), a Mental Performance Lab supporting 8 gold-standard technologies (eego sports · NIRSport2 · tDCS · Rezzil VR · CANTAB · EyeLink · OptiTrack), sport injury psychology with OSIICS classification and psychological readiness tracking, IOC Mental Health Screening, custom assessment builder, and AI-generated case formulation reports — making SPPS one of the most comprehensive digital tools available for elite sport psychology practice.
+
 ---
 
 ## Tech Stack
 
 | Layer | Technology |
-|---|---|
+|-------|------------|
 | Frontend | React 18 · TypeScript · Vite |
 | Styling | Tailwind CSS · DM Sans · Playfair Display |
 | Routing | React Router v6 (auth + compliance guards) |
 | State | TanStack Query v5 |
 | Backend | Supabase (PostgreSQL · Auth · Row Level Security) |
-| AI | Anthropic Claude API (AI Assistant + report generation) |
+| AI | Groq API (AI Assistant + report generation) |
 | Charts | Recharts |
 | Icons | Lucide React |
 
@@ -28,17 +29,32 @@ SPPS is a full-stack web application for sport psychology practitioners to manag
 
 ## Features
 
-- **3-step practitioner signup** with role and organisation details
-- **4-gate compliance onboarding** — HIPAA BAA · User Agreement · Terms · Data Privacy
-- **Athlete management** — 6-step intake with consent + parental release for under-15
-- **Session logging** — pre/post mood ratings, outcome scoring, linked interventions
-- **Daily check-ins** — 10 wellbeing metrics with auto-flagging and trend charts
-- **6 SPPS proprietary assessments** — APAS · PSAS · SCES · TRPS · MFAS · CFAS
-- **Interventions log** — type, frequency, duration, outcome tracking
-- **AI Assistant** — Claude-powered clinical guidance and session planning
-- **Reports** — AI-generated markdown reports
-- **PHI audit log** — HIPAA §164.508 compliant disclosure tracking
-- **Mobile responsive** — bottom tab nav, touch-optimised controls
+**Core Practice Management**
+- 3-step practitioner signup with role and organisation details
+- 4-gate compliance onboarding — HIPAA BAA · User Agreement · Terms · Data Privacy
+- Athlete management — 6-step intake with consent + parental release for under-15
+- Session logging — pre/post mood ratings, outcome scoring, linked interventions
+- Daily check-ins — 10 wellbeing metrics with auto-flagging and trend charts
+- Interventions log — type, frequency, duration, outcome tracking
+- PHI audit log — HIPAA §164.508 compliant disclosure tracking
+- Mobile responsive — bottom tab nav, touch-optimised controls
+
+**Assessments**
+- 6 SPPS proprietary assessments — APAS · PSAS · SCES · TRPS · MFAS · CFAS
+- IOC Mental Health Screening — 10-item validated tool with domain scoring
+- Custom Assessment Builder — import any third-party or in-house tool with flexible scale entry
+
+**Advanced Clinical Modules**
+- Case Formulation — AI-generated reports with integrated session, assessment, and check-in data across radar, line, and bar charts
+- Neurocognitive Profiling — Senaptec 10-skill visual · processing · reaction radar profiling
+- Psychophysiology — EMG (22 muscle groups) · EEG brainwave band entry · HRV · Galvanic Skin Response logging
+- Mental Performance Lab — structured data entry for 8 technologies: eego sports EEG · NIRSport2/Brite23 fNIRS · Soterix tDCS · Rezzil VR · CANTAB · EyeLink eye tracking · OptiTrack motion capture
+- Injury Psychology — injury log · OSIICS classifier · psychological readiness tracking · surveillance reports
+
+**AI & Reporting**
+- AI Assistant — Groq-powered clinical guidance and session planning
+- Reports — AI-generated markdown clinical reports
+- Case Formulation Reports — downloadable, printable, anonymised athlete summaries
 
 ---
 
@@ -47,7 +63,7 @@ SPPS is a full-stack web application for sport psychology practitioners to manag
 All instruments are SPPS proprietary tools (SPPS Internal v1.0):
 
 | Code | Full Name | Items | Domain |
-|---|---|---|---|
+|------|-----------|-------|--------|
 | APAS | Athletic Pre-Competition Anxiety Scale | 18 | Anxiety |
 | PSAS | Psychological Stress & Arousal Scale | 21 | Stress |
 | SCES | Sport Confidence & Efficacy Scale | 15 | Confidence |
@@ -62,7 +78,7 @@ All instruments are SPPS proprietary tools (SPPS Internal v1.0):
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/karansportpsy/spps-karan.git
+git clone https://github.com/karansportpsy-spec/spps-karan.git
 cd spps-karan
 ```
 
@@ -83,14 +99,14 @@ Open `.env` and fill in your keys:
 ```env
 VITE_SUPABASE_URL=https://your-project-id.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key-here
-VITE_ANTHROPIC_KEY=sk-ant-your-key-here
+VITE_GROQ_API_KEY=your-groq-key-here
 ```
 
 ### 4. Set up the database
 
 1. Create a new project at [supabase.com](https://supabase.com)
 2. Go to **SQL Editor** and run the full contents of `supabase-schema.sql`
-3. Copy your **Project URL** and **anon public key** from **Settings → API** into `.env`
+3. Copy your **Project URL** and **anon public key** from Settings → API into `.env`
 
 ### 5. Run the app
 
@@ -117,7 +133,7 @@ spps-karan/
     │
     ├── lib/
     │   ├── supabase.ts        Supabase client
-    │   ├── anthropic.ts       Anthropic API helper
+    │   ├── groq.ts            Groq API helper
     │   └── utils.ts           cn, fmtDate, scoreColor…
     │
     ├── contexts/
@@ -137,10 +153,19 @@ spps-karan/
         ├── Dashboard.tsx
         ├── auth/AuthPages.tsx
         ├── compliance/CompliancePages.tsx
-        ├── athletes/AthletesPage.tsx
+        ├── athletes/
+        │   ├── AthletesPage.tsx
+        │   └── CaseFormulation.tsx
         ├── sessions/SessionsPage.tsx
         ├── checkins/CheckInsPage.tsx
-        ├── assessments/AssessmentsPage.tsx
+        ├── assessments/
+        │   ├── AssessmentsPage.tsx
+        │   ├── CustomAssessmentPage.tsx
+        │   └── IOCMentalHealthPage.tsx
+        ├── neurocognitive/NeurocognitivePage.tsx
+        ├── psychophysiology/PsychophysiologyPage.tsx
+        ├── lab/MentalPerformanceLabPage.tsx
+        ├── injury/InjuryPsychologyPage.tsx
         ├── interventions/InterventionsPage.tsx
         ├── ai/AIAssistantPage.tsx
         ├── reports/ReportsPage.tsx
@@ -160,10 +185,10 @@ spps-karan/
 ## Environment Variables
 
 | Variable | Source |
-|---|---|
+|----------|--------|
 | `VITE_SUPABASE_URL` | Supabase Dashboard → Settings → API |
 | `VITE_SUPABASE_ANON_KEY` | Supabase Dashboard → Settings → API |
-| `VITE_ANTHROPIC_KEY` | [console.anthropic.com](https://console.anthropic.com) |
+| `VITE_GROQ_API_KEY` | [console.groq.com](https://console.groq.com) |
 
 > **Never commit `.env`** — it is in `.gitignore`. Only `.env.example` is tracked.
 
@@ -191,9 +216,6 @@ npm run type-check # TypeScript check only
 
 ## Developed by
 
-**Dr. Karanbir Singh**  
-Senior Sport Psychologist · ABTP MindLab · Kalinga Stadium, Bhubaneswar, Odisha
+**Dr. Karanbir Singh, Ph.D.**
 
----
-
-*SPPS — Sport Psychology Practitioner Suite · v2.0 · github.com/karansportpsy/spps-karan*
+SPPS — Sport Psychology Practitioner Suite · v2.0 · [github.com/karansportpsy-spec/spps-karan](https://github.com/karansportpsy-spec/spps-karan)
