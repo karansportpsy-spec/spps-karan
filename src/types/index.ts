@@ -58,6 +58,8 @@ export interface Athlete {
   notes?: string
   emergency_contact_name?: string
   emergency_contact_phone?: string
+  uid_code?: string          // FIX: added — WMP-YYYY-XXXXXX anonymisation UID
+  age_group?: string         // FIX: added — e.g. 'U18', 'Senior', 'Masters'
   created_at: string
   updated_at: string
 }
@@ -81,6 +83,7 @@ export interface Session {
   notes?: string
   risk_assessment?: RiskLevel
   follow_up_required: boolean
+  homework?: string          // FIX: added — between-session tasks
   created_at: string
   updated_at: string
 }
@@ -96,6 +99,8 @@ export interface CheckIn {
   sleep_score: number         // 1–10
   motivation_score: number    // 1–10
   readiness_score: number     // 1–10
+  energy_score?: number       // FIX: added — 1–10
+  soreness_score?: number     // FIX: added — 1–10 (physical soreness)
   notes?: string
   flags?: string[]
   created_at: string
@@ -138,7 +143,9 @@ export interface Intervention {
   description?: string
   protocol?: string
   session_id?: string
-  rating?: number     // 1–5 effectiveness
+  rating?: number       // 1–5 effectiveness
+  outcome?: string      // FIX: added — recorded outcome/result of intervention
+  status?: string       // FIX: added — e.g. 'active', 'completed', 'discontinued'
   notes?: string
   created_at: string
   updated_at: string
