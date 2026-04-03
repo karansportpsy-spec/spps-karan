@@ -1,19 +1,23 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { fileURLToPath, URL } from 'node:url'
+import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
+  build: {
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor':    ['react', 'react-dom', 'react-router-dom'],
+          'query-vendor':    ['@tanstack/react-query'],
+          'charts-vendor':   ['recharts'],
+          'supabase-vendor': ['@supabase/supabase-js'],
+        },
+      },
     },
   },
-  define: {
-    global: 'globalThis',
-  },
-  server: {
-    port: 5173,
-    host: true,
+  resolve: {
+    alias: { '@': path.resolve(__dirname, './src') },  // FIX: absolute path for Vercel
   },
 })
