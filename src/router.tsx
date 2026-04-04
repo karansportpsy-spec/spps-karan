@@ -15,7 +15,7 @@ import CaseFormulationPage     from '@/pages/athletes/CaseFormulation'
 import CustomAssessmentPage    from '@/pages/assessments/CustomAssessmentPage'
 import ConsentFormsPage        from '@/pages/consent/ConsentFormsPage'
 import InjuryPsychologyPage    from '@/pages/injury/InjuryPsychologyPage'
-import MentalPerformanceLabPage from '@/pages/lab/MentalPerformanceLabPage'
+import ProfileSetupPage        from '@/pages/auth/ProfileSetupPage'
 import {
   SessionsPage, CheckInsPage, AssessmentsPage,
   InterventionsPage, AIAssistantPage, ReportsPage, SettingsPage,
@@ -83,6 +83,7 @@ const router = createBrowserRouter([
     element: <RequireAuth />,
     children: [
       { path: '/dashboard',     element: <DashboardPage /> },
+      { path: '/profile/setup',  element: <ProfileSetupPage /> },
       { path: '/athletes',      element: <AthletesPage /> },
       { path: '/athletes/:athleteId/case', element: <CaseFormulationPage /> },
       { path: '/sessions',      element: <SessionsPage /> },
@@ -95,7 +96,6 @@ const router = createBrowserRouter([
       { path: '/interventions', element: <InterventionsPage /> },
       { path: '/consent',       element: <ConsentFormsPage /> },
       { path: '/injury',        element: <InjuryPsychologyPage /> },
-      { path: '/lab',           element: <MentalPerformanceLabPage /> },
       { path: '/ai-assistant',  element: <AIAssistantPage /> },
       { path: '/reports',       element: <ReportsPage /> },
       { path: '/settings',      element: <SettingsPage /> },

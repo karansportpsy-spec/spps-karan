@@ -1,3 +1,6 @@
+// src/pages/AppPages.tsx
+// Barrel re-export — router imports all pages from one place.
+
 export { default as SessionsPage }      from '@/pages/sessions/SessionsPage'
 export { default as CheckInsPage }      from '@/pages/checkins/CheckInsPage'
 export { default as AssessmentsPage }   from '@/pages/assessments/AssessmentsPage'

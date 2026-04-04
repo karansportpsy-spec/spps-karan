@@ -19,7 +19,9 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
     autoRefreshToken:   true,
     persistSession:     true,
     detectSessionInUrl: true,
-    storageKey:         'spps-auth',
+    // storageKey intentionally NOT set — uses the default sb-{project-ref}-auth-token
+    // which allows AuthContext's cleanup code to correctly find and clear the session
+    // when it becomes corrupted (the old 'spps-auth' key was invisible to cleanup)
   },
   global: {
     headers: { 'x-application-name': 'spps-v2' },

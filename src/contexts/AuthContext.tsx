@@ -49,8 +49,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) { console.error('[SPPS Auth] getSession:', error.message); setLoading(false); return }
       setSession(session)
       setUser(session?.user ?? null)
-      if (session?.user) await loadProfile(session.user.id)
-      setLoading(false)
+      if (session?.user) {
+        // FIX: wrap in try/catch with timeout so a hanging loadProfile
+        // never leaves the app stuck on "Loading SPPS…" forever
+        try {
+          const profileTimeout = new Promise<null>(resolve => setTimeout(() => resolve(null), 5000))
+          const profileLoad    = fetchProfile(session.user.id)
+          const profile = await Promise.race([profileLoad, profileTimeout])
+          if (mounted) setPractitioner(profile)
+        } catch (e) {
+          console.error('[SPPS Auth] loadProfile failed:', e)
+        }
+      }
+      if (mounted) setLoading(false)
     })
 
     // Auth state listener
