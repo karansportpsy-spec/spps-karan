@@ -19,13 +19,18 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 async function fetchProfile(userId: string): Promise<Practitioner | null> {
-  const { data, error } = await supabase
-    .from('practitioners')
-    .select('*, organisation:organisations(id,name,type,country,state_province,city,website_url)')
-    .eq('id', userId)
-    .maybeSingle()
-  if (error) { console.error('[SPPS Auth] fetchProfile:', error.message); return null }
-  return data as Practitioner | null
+  try {
+    const { data, error } = await supabase
+      .from('practitioners')
+      .select('*, organisation:organisations(id,name,type,country,state_province,city,website_url)')
+      .eq('id', userId)
+      .maybeSingle()
+    if (error) { console.error('[SPPS Auth] fetchProfile:', error.message); return null }
+    return data as Practitioner | null
+  } catch (e) {
+    console.error('[SPPS Auth] fetchProfile exception:', e)
+    return null
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -49,58 +54,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) { console.error('[SPPS Auth] getSession:', error.message); setLoading(false); return }
       setSession(session)
       setUser(session?.user ?? null)
-      if (session?.user) {
-        // FIX: wrap in try/catch with timeout so a hanging loadProfile
-        // never leaves the app stuck on "Loading SPPS…" forever
-        try {
-          const profileTimeout = new Promise<null>(resolve => setTimeout(() => resolve(null), 5000))
-          const profileLoad    = fetchProfile(session.user.id)
-          const profile = await Promise.race([profileLoad, profileTimeout])
-          if (mounted) setPractitioner(profile)
-        } catch (e) {
-          console.error('[SPPS Auth] loadProfile failed:', e)
-        }
-      }
-      if (mounted) setLoading(false)
+      if (session?.user) await loadProfile(session.user.id)
+      setLoading(false)
     })
 
     // Auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
-
-      // FIX: Only update state for meaningful auth events.
-      // TOKEN_REFRESHED fires every ~55 min and was causing full re-renders
-      // that appeared as "reloads" to users. We silently update the session
-      // object without triggering profile re-fetches or loading state changes.
-      if (event === 'TOKEN_REFRESHED') {
-        setSession(session)  // keep session fresh but don't re-render pages
-        return
-      }
-
+      if (event === 'TOKEN_REFRESHED') { setSession(session); return }
       if (event === 'SIGNED_IN') {
-        setSession(session)
-        setUser(session?.user ?? null)
+        setSession(session); setUser(session?.user ?? null)
         if (session?.user) await loadProfile(session.user.id)
         return
       }
-
-      if (event === 'SIGNED_OUT') {
-        setSession(null)
-        setUser(null)
-        setPractitioner(null)
-        return
-      }
-
+      if (event === 'SIGNED_OUT') { setSession(null); setUser(null); setPractitioner(null); return }
       if (event === 'USER_UPDATED') {
-        setSession(session)
-        setUser(session?.user ?? null)
+        setSession(session); setUser(session?.user ?? null)
         if (session?.user) await loadProfile(session.user.id)
         return
       }
-
-      // PASSWORD_RECOVERY, INITIAL_SESSION — update session silently
-      setSession(session)
-      setUser(session?.user ?? null)
+      setSession(session); setUser(session?.user ?? null)
     })
 
     return () => { mounted = false; subscription.unsubscribe() }
@@ -117,56 +90,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthError(null)
     const { data, error } = await supabase.auth.signUp({
       email, password,
-      options: {
-        data: {
-          first_name: meta?.first_name ?? '',
-          last_name:  meta?.last_name  ?? '',
-          role:       meta?.role ?? 'sport_psychologist',
-        },
-      },
+      options: { data: { first_name: meta?.first_name ?? '', last_name: meta?.last_name ?? '', role: meta?.role ?? 'sport_psychologist' } },
     })
     if (error) { const m = humanize(error); setAuthError(m); throw new Error(m) }
     if (data.user) {
-      // FIX: Use insert with conflict handling instead of upsert
-      // to avoid issues when practitioners row doesn't exist yet
-      const { error: profileError } = await supabase.from('practitioners').upsert({
-        id:                  data.user.id,
-        email,
-        first_name:          meta?.first_name ?? '',
-        last_name:           meta?.last_name  ?? '',
-        role:                meta?.role ?? 'sport_psychologist',
-        hipaa_acknowledged:  false,
-        compliance_completed: false,
-        notification_email:  true,
-        notification_sms:    false,
+      await supabase.from('practitioners').upsert({
+        id: data.user.id, email,
+        first_name: meta?.first_name ?? '', last_name: meta?.last_name ?? '',
+        role: meta?.role ?? 'sport_psychologist',
+        hipaa_acknowledged: false, compliance_completed: false,
+        notification_email: true, notification_sms: false,
       }, { onConflict: 'id' })
-
-      if (profileError) {
-        console.error('[SPPS Auth] Failed to create practitioner profile:', profileError.message)
-      }
-
       await loadProfile(data.user.id)
     }
   }
 
   async function signOut() {
     await supabase.auth.signOut()
-    setUser(null)
-    setSession(null)
-    setPractitioner(null)
+    setUser(null); setSession(null); setPractitioner(null)
   }
 
-  async function refreshProfile() {
-    if (user) await loadProfile(user.id)
-  }
-
+  async function refreshProfile() { if (user) await loadProfile(user.id) }
   function clearError() { setAuthError(null) }
 
   return (
-    <AuthContext.Provider value={{
-      user, session, practitioner, loading, authError,
-      signIn, signUp, signOut, refreshProfile, clearError,
-    }}>
+    <AuthContext.Provider value={{ user, session, practitioner, loading, authError, signIn, signUp, signOut, refreshProfile, clearError }}>
       {children}
     </AuthContext.Provider>
   )
@@ -180,11 +128,10 @@ export function useAuth() {
 
 function humanize(error: AuthError): string {
   const m = error.message.toLowerCase()
-  if (m.includes('invalid login credentials'))    return 'Incorrect email or password.'
-  if (m.includes('email not confirmed'))          return 'Please check your email and click the confirmation link.'
-  if (m.includes('user already registered'))      return 'An account with this email already exists. Please sign in.'
-  if (m.includes('password should be at least'))  return 'Password must be at least 6 characters.'
-  if (m.includes('rate limit'))                   return 'Too many attempts — please wait a moment and try again.'
-  if (m.includes('email address') && m.includes('invalid')) return 'Please enter a valid email address.'
+  if (m.includes('invalid login credentials'))   return 'Incorrect email or password.'
+  if (m.includes('email not confirmed'))         return 'Please check your email and click the confirmation link.'
+  if (m.includes('user already registered'))     return 'An account with this email already exists. Please sign in.'
+  if (m.includes('password should be at least')) return 'Password must be at least 6 characters.'
+  if (m.includes('rate limit'))                  return 'Too many attempts — please wait a moment and try again.'
   return error.message
 }
