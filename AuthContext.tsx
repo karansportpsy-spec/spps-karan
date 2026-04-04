@@ -46,10 +46,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Initial session load
     supabase.auth.getSession().then(async ({ data: { session }, error }) => {
       if (!mounted) return
-      if (error) { console.error('[SPPS Auth] getSession:', error.message); setLoading(false); return }
+      
+      if (error) { 
+        console.error('[SPPS Auth] getSession error detected. Clearing corrupted storage:', error.message)
+        // THE FIX: Automatically clear the bad token so the user isn't stuck
+        localStorage.clear() 
+        setLoading(false) 
+        return 
+      }
+      
       setSession(session)
       setUser(session?.user ?? null)
       if (session?.user) await loadProfile(session.user.id)
+      setLoading(false)
+    }).catch((err) => {
+      // Catch any unexpected local storage parsing errors
+      console.error('[SPPS Auth] getSession unexpected error:', err)
+      localStorage.clear()
       setLoading(false)
     })
 
@@ -73,7 +86,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      if (event === 'SIGNED_OUT') {
+      if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+        // Also clear storage on explicit sign out
+        localStorage.clear() 
         setSession(null)
         setUser(null)
         setPractitioner(null)

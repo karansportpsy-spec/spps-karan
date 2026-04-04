@@ -218,4 +218,5 @@ npm run type-check # TypeScript check only
 
 **Dr. Karanbir Singh, Ph.D.**
 
-SPPS — Sport Psychology Practitioner Suite · v2.0 · [github.com/karansportpsy-spec/spps-karan](https://github.com/karansportpsy-spec/spps-karan)
+SPPS — Sport Psychology Practitioner Suite · v2.0 · [github.com/karansportpsy-spec/spps-karan](https://github.com/karansportpsy-spec/spps-karan)#   s p p s - k a r a n  
+ 
