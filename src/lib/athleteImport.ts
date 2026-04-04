@@ -58,7 +58,7 @@ export async function readFileContent(file: File): Promise<{ text: string; type:
   })
 }
 
-// Extract text from any file format — uses mammoth for DOCX, SheetJS for XLSX
+// Extract text from any file format — uses mammoth for DOCX, native ZIP/XML for XLSX/XLS
 export async function extractTextFromFile(file: File): Promise<string> {
   const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
   const MAX = 12000
@@ -126,18 +126,113 @@ export async function extractTextFromFile(file: File): Promise<string> {
     })
   }
 
-  // XLSX — extract using SheetJS
+  // XLSX / XLS — zero-dependency native extraction
+  // xlsx files are ZIP archives containing XML sheets. We unzip them in the
+  // browser using the DecompressionStream API (available in all modern browsers)
+  // and parse the shared-strings + sheet XML directly — no vulnerable library needed.
   if (['xlsx', 'xls'].includes(ext)) {
     try {
-      const XLSX = await import('xlsx')
       const arrayBuffer = await file.arrayBuffer()
-      const wb = XLSX.read(arrayBuffer, { type: 'array' })
-      const parts: string[] = []
-      for (const name of wb.SheetNames.slice(0, 5)) {
-        parts.push(`=== ${name} ===\n${XLSX.utils.sheet_to_csv(wb.Sheets[name], { blankrows: false }).slice(0, 3000)}`)
+      const uint8 = new Uint8Array(arrayBuffer)
+
+      // Locate ZIP local file headers (PK\x03\x04) and extract XML entries
+      const decoder = new TextDecoder('utf-8')
+      const results: string[] = []
+      let i = 0
+
+      // Parse ZIP entries to find xl/sharedStrings.xml and xl/worksheets/sheet*.xml
+      const entries: Record<string, string> = {}
+      while (i < uint8.length - 4) {
+        // Local file header signature
+        if (uint8[i] === 0x50 && uint8[i+1] === 0x4B && uint8[i+2] === 0x03 && uint8[i+3] === 0x04) {
+          const compMethod  = uint8[i+8]  | (uint8[i+9]  << 8)
+          const compSize    = uint8[i+18] | (uint8[i+19] << 8) | (uint8[i+20] << 16) | (uint8[i+21] << 24)
+          const uncompSize  = uint8[i+22] | (uint8[i+23] << 8) | (uint8[i+24] << 16) | (uint8[i+25] << 24)
+          const fnLen       = uint8[i+26] | (uint8[i+27] << 8)
+          const extraLen    = uint8[i+28] | (uint8[i+29] << 8)
+          const fnStart     = i + 30
+          const dataStart   = fnStart + fnLen + extraLen
+          const fileName    = decoder.decode(uint8.slice(fnStart, fnStart + fnLen))
+
+          if (fileName.includes('sharedStrings') || fileName.match(/xl\/worksheets\/sheet\d/)) {
+            const compData = uint8.slice(dataStart, dataStart + compSize)
+            if (compMethod === 0) {
+              // Stored (no compression)
+              entries[fileName] = decoder.decode(compData)
+            } else if (compMethod === 8 && typeof DecompressionStream !== 'undefined') {
+              // Deflate — use native DecompressionStream
+              try {
+                const ds = new DecompressionStream('deflate-raw')
+                const writer = ds.writable.getWriter()
+                writer.write(compData)
+                writer.close()
+                const chunks: Uint8Array[] = []
+                const reader2 = ds.readable.getReader()
+                let done = false
+                while (!done) {
+                  const { value, done: d } = await reader2.read()
+                  if (value) chunks.push(value)
+                  done = d
+                }
+                const total = chunks.reduce((acc, c) => acc + c.length, 0)
+                const merged = new Uint8Array(total)
+                let offset = 0
+                for (const c of chunks) { merged.set(c, offset); offset += c.length }
+                entries[fileName] = decoder.decode(merged)
+              } catch { /* skip this entry */ }
+            }
+          }
+          i = dataStart + compSize
+        } else {
+          i++
+        }
       }
-      return parts.join('\n').slice(0, MAX)
-    } catch { return `[XLSX: ${file.name}]` }
+
+      // Build shared strings lookup
+      const sharedStrings: string[] = []
+      const ssXml = Object.entries(entries).find(([k]) => k.includes('sharedStrings'))?.[1] ?? ''
+      const siMatches = ssXml.match(/<si>[\s\S]*?<\/si>/g) ?? []
+      for (const si of siMatches) {
+        const tMatches = si.match(/<t[^>]*>([^<]*)<\/t>/g) ?? []
+        sharedStrings.push(tMatches.map(t => t.replace(/<[^>]+>/g, '')).join(''))
+      }
+
+      // Parse each worksheet into CSV rows
+      const sheetEntries = Object.entries(entries)
+        .filter(([k]) => k.match(/xl\/worksheets\/sheet\d/))
+        .slice(0, 5)
+
+      for (const [sheetName, sheetXml] of sheetEntries) {
+        const rows: string[][] = []
+        const rowMatches = sheetXml.match(/<row[^>]*>[\s\S]*?<\/row>/g) ?? []
+        for (const row of rowMatches) {
+          const cells: string[] = []
+          const cellMatches = row.match(/<c[^>]*>[\s\S]*?<\/c>/g) ?? []
+          for (const cell of cellMatches) {
+            const typeMatch  = cell.match(/t="([^"]*)"/)
+            const vMatch     = cell.match(/<v>([^<]*)<\/v>/)
+            const isMatch    = cell.match(/<is>[\s\S]*?<\/is>/)
+            let val = ''
+            if (isMatch) {
+              val = (isMatch[0].match(/<t[^>]*>([^<]*)<\/t>/)?.[1] ?? '').trim()
+            } else if (typeMatch?.[1] === 's' && vMatch) {
+              val = sharedStrings[parseInt(vMatch[1])] ?? ''
+            } else if (vMatch) {
+              val = vMatch[1]
+            }
+            cells.push(val.includes(',') ? `"${val}"` : val)
+          }
+          if (cells.some(c => c)) rows.push(cells)
+        }
+        const label = sheetName.match(/sheet(\d+)/)?.[1] ?? sheetName
+        results.push(`=== Sheet ${label} ===\n${rows.map(r => r.join(',')).join('\n').slice(0, 3000)}`)
+      }
+
+      if (results.length) return results.join('\n\n').slice(0, MAX)
+      return `[XLSX: ${file.name} — could not extract text. Try saving as CSV before importing.]`
+    } catch {
+      return `[XLSX: ${file.name} — could not extract text. Try saving as CSV before importing.]`
+    }
   }
 
   return `[File: ${file.name} — ${file.type}. Extract any athlete information visible in this document.]`

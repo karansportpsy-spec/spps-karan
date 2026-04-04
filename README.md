@@ -220,4 +220,5 @@ npm run type-check # TypeScript check only
 
 SPPS — Sport Psychology Practitioner Suite · v2.0 · [github.com/karansportpsy-spec/spps-karan](https://github.com/karansportpsy-spec/spps-karan)#   s p p s - k a r a n  
  #   s p p s - k a r a n  
+ #   s p p s - k a r a n  
  

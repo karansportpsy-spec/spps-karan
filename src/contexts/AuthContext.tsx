@@ -1,3 +1,4 @@
+// src/contexts/AuthContext.tsx
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
 import { User, Session, AuthError } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
@@ -7,7 +8,8 @@ interface AuthContextValue {
   user:             User | null
   session:          Session | null
   practitioner:     Practitioner | null
-  loading:          boolean
+  loading:          boolean        // auth session loading
+  profileLoading:   boolean        // practitioner profile loading
   authError:        string | null
   signIn:           (email: string, password: string) => Promise<void>
   signUp:           (email: string, password: string, meta?: Partial<Practitioner>) => Promise<void>
@@ -19,102 +21,190 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 async function fetchProfile(userId: string): Promise<Practitioner | null> {
-  try {
-    const { data, error } = await supabase
-      .from('practitioners')
-      .select('*, organisation:organisations(id,name,type,country,state_province,city,website_url)')
-      .eq('id', userId)
-      .maybeSingle()
-    if (error) { console.error('[SPPS Auth] fetchProfile:', error.message); return null }
-    return data as Practitioner | null
-  } catch (e) {
-    console.error('[SPPS Auth] fetchProfile exception:', e)
+  const { data, error } = await supabase
+    .from('practitioners')
+    .select('*, organisation:organisations(id,name,type,country,state_province,city,website_url)')
+    .eq('id', userId)
+    .maybeSingle()
+  if (error) {
+    console.error('[SPPS Auth] fetchProfile error:', error.message)
     return null
   }
+  return data as Practitioner | null
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser]                 = useState<User | null>(null)
-  const [session, setSession]           = useState<Session | null>(null)
-  const [practitioner, setPractitioner] = useState<Practitioner | null>(null)
-  const [loading, setLoading]           = useState(true)
-  const [authError, setAuthError]       = useState<string | null>(null)
+  const [user, setUser]                   = useState<User | null>(null)
+  const [session, setSession]             = useState<Session | null>(null)
+  const [practitioner, setPractitioner]   = useState<Practitioner | null>(null)
+  const [loading, setLoading]             = useState(true)      // blocks the whole app
+  const [profileLoading, setProfileLoading] = useState(false)  // just profile fetch
+  const [authError, setAuthError]         = useState<string | null>(null)
 
   const loadProfile = useCallback(async (userId: string) => {
-    const profile = await fetchProfile(userId)
-    setPractitioner(profile)
+    setProfileLoading(true)
+    try {
+      const profile = await fetchProfile(userId)
+      setPractitioner(profile)
+    } finally {
+      setProfileLoading(false)
+    }
   }, [])
 
   useEffect(() => {
     let mounted = true
 
-    // Initial session load
-    supabase.auth.getSession().then(async ({ data: { session }, error }) => {
-      if (!mounted) return
-      if (error) { console.error('[SPPS Auth] getSession:', error.message); setLoading(false); return }
-      setSession(session)
-      setUser(session?.user ?? null)
-      if (session?.user) await loadProfile(session.user.id)
-      setLoading(false)
-    })
+    // ── Initial session check ─────────────────────────────────────────────────
+    supabase.auth.getSession()
+      .then(async ({ data: { session }, error }) => {
+        if (!mounted) return
 
-    // Auth state listener
+        if (error) {
+          // Corrupted token — clear ALL auth-related storage so user sees login page
+          // Clears both the default sb-* key AND the legacy 'spps-auth' custom key
+          console.warn('[SPPS Auth] Corrupted session detected, clearing storage:', error.message)
+          Object.keys(localStorage)
+            .filter(k => k.startsWith('sb-') || k === 'spps-auth')
+            .forEach(k => localStorage.removeItem(k))
+          if (mounted) setLoading(false)
+          return
+        }
+
+        setSession(session)
+        setUser(session?.user ?? null)
+
+        if (session?.user) {
+          await loadProfile(session.user.id)
+        }
+
+        if (mounted) setLoading(false)
+      })
+      .catch((err) => {
+        // Catches JSON parse errors from malformed localStorage values
+        console.error('[SPPS Auth] getSession threw unexpectedly:', err)
+        Object.keys(localStorage).filter(k => k.startsWith('sb-') || k === 'spps-auth').forEach(k => localStorage.removeItem(k))
+        if (mounted) setLoading(false)
+      })
+
+    // ── Auth state listener ───────────────────────────────────────────────────
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
-      if (event === 'TOKEN_REFRESHED') { setSession(session); return }
+
+      // TOKEN_REFRESHED fires every ~55 min — silently update session
+      // without re-fetching profile or triggering re-renders
+      if (event === 'TOKEN_REFRESHED') {
+        setSession(session)
+        return
+      }
+
       if (event === 'SIGNED_IN') {
-        setSession(session); setUser(session?.user ?? null)
+        setSession(session)
+        setUser(session?.user ?? null)
         if (session?.user) await loadProfile(session.user.id)
         return
       }
-      if (event === 'SIGNED_OUT') { setSession(null); setUser(null); setPractitioner(null); return }
+
+      if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+        setSession(null)
+        setUser(null)
+        setPractitioner(null)
+        // Only clear Supabase keys, not the whole localStorage
+        Object.keys(localStorage).filter(k => k.startsWith('sb-') || k === 'spps-auth').forEach(k => localStorage.removeItem(k))
+        return
+      }
+
       if (event === 'USER_UPDATED') {
-        setSession(session); setUser(session?.user ?? null)
+        setSession(session)
+        setUser(session?.user ?? null)
         if (session?.user) await loadProfile(session.user.id)
         return
       }
-      setSession(session); setUser(session?.user ?? null)
+
+      // INITIAL_SESSION, PASSWORD_RECOVERY — update silently
+      setSession(session)
+      setUser(session?.user ?? null)
     })
 
-    return () => { mounted = false; subscription.unsubscribe() }
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [loadProfile])
 
+  // ── Sign In ─────────────────────────────────────────────────────────────────
   async function signIn(email: string, password: string) {
     setAuthError(null)
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) { const m = humanize(error); setAuthError(m); throw new Error(m) }
+    if (error) {
+      const m = humanize(error)
+      setAuthError(m)
+      throw new Error(m)
+    }
     if (data.user) await loadProfile(data.user.id)
   }
 
+  // ── Sign Up ─────────────────────────────────────────────────────────────────
   async function signUp(email: string, password: string, meta?: Partial<Practitioner>) {
     setAuthError(null)
     const { data, error } = await supabase.auth.signUp({
-      email, password,
-      options: { data: { first_name: meta?.first_name ?? '', last_name: meta?.last_name ?? '', role: meta?.role ?? 'sport_psychologist' } },
+      email,
+      password,
+      options: {
+        data: {
+          first_name: meta?.first_name ?? '',
+          last_name:  meta?.last_name  ?? '',
+          role:       meta?.role ?? 'sport_psychologist',
+        },
+      },
     })
-    if (error) { const m = humanize(error); setAuthError(m); throw new Error(m) }
+    if (error) {
+      const m = humanize(error)
+      setAuthError(m)
+      throw new Error(m)
+    }
     if (data.user) {
-      await supabase.from('practitioners').upsert({
-        id: data.user.id, email,
-        first_name: meta?.first_name ?? '', last_name: meta?.last_name ?? '',
-        role: meta?.role ?? 'sport_psychologist',
-        hipaa_acknowledged: false, compliance_completed: false,
-        notification_email: true, notification_sms: false,
+      // Upsert practitioner profile — safe to re-run if signup was partially complete
+      const { error: profileError } = await supabase.from('practitioners').upsert({
+        id:                   data.user.id,
+        email,
+        first_name:           meta?.first_name ?? '',
+        last_name:            meta?.last_name  ?? '',
+        role:                 meta?.role ?? 'sport_psychologist',
+        hipaa_acknowledged:   false,
+        compliance_completed: false,
+        notification_email:   true,
+        notification_sms:     false,
       }, { onConflict: 'id' })
+
+      if (profileError) {
+        console.error('[SPPS Auth] Failed to create practitioner profile:', profileError.message)
+      }
+
       await loadProfile(data.user.id)
     }
   }
 
+  // ── Sign Out ────────────────────────────────────────────────────────────────
   async function signOut() {
     await supabase.auth.signOut()
-    setUser(null); setSession(null); setPractitioner(null)
+    setUser(null)
+    setSession(null)
+    setPractitioner(null)
   }
 
-  async function refreshProfile() { if (user) await loadProfile(user.id) }
+  // ── Refresh Profile ─────────────────────────────────────────────────────────
+  // Called after compliance completion so the router guard sees the updated state
+  async function refreshProfile() {
+    if (user) await loadProfile(user.id)
+  }
+
   function clearError() { setAuthError(null) }
 
   return (
-    <AuthContext.Provider value={{ user, session, practitioner, loading, authError, signIn, signUp, signOut, refreshProfile, clearError }}>
+    <AuthContext.Provider value={{
+      user, session, practitioner, loading, profileLoading, authError,
+      signIn, signUp, signOut, refreshProfile, clearError,
+    }}>
       {children}
     </AuthContext.Provider>
   )
@@ -126,12 +216,15 @@ export function useAuth() {
   return ctx
 }
 
+// ── Human-readable auth error messages ─────────────────────────────────────
 function humanize(error: AuthError): string {
   const m = error.message.toLowerCase()
-  if (m.includes('invalid login credentials'))   return 'Incorrect email or password.'
-  if (m.includes('email not confirmed'))         return 'Please check your email and click the confirmation link.'
-  if (m.includes('user already registered'))     return 'An account with this email already exists. Please sign in.'
-  if (m.includes('password should be at least')) return 'Password must be at least 6 characters.'
-  if (m.includes('rate limit'))                  return 'Too many attempts — please wait a moment and try again.'
+  if (m.includes('invalid login credentials'))              return 'Incorrect email or password.'
+  if (m.includes('email not confirmed'))                    return 'Please check your email and click the confirmation link first.'
+  if (m.includes('user already registered'))                return 'An account with this email already exists. Please sign in instead.'
+  if (m.includes('password should be at least'))            return 'Password must be at least 6 characters long.'
+  if (m.includes('rate limit'))                             return 'Too many attempts — please wait a moment and try again.'
+  if (m.includes('email address') && m.includes('invalid')) return 'Please enter a valid email address.'
+  if (m.includes('signup is disabled'))                     return 'New registrations are currently paused. Please contact support.'
   return error.message
 }

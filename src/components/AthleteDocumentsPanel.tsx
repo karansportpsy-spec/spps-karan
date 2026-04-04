@@ -464,7 +464,7 @@ function UploadZone({
           <input
             type="file"
             multiple
-            accept=".pdf,.docx,.doc,.xlsx,.xlsm,.xls,.txt,.md,.csv,.json,.html,.htm,.jpg,.jpeg,.png,.webp"
+            accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.md,.csv,.json,.jpg,.jpeg,.png,.webp"
             className="hidden"
             onChange={e => handleFiles(e.target.files)}
           />
