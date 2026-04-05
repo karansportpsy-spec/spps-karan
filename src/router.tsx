@@ -41,7 +41,11 @@ function RequireAuth() {
   const location = useLocation()
   if (loading) return <LoadingScreen />
   if (!user) return <Navigate to="/auth/login" state={{ from: location }} replace />
-  if (profileLoading || practitioner === null) return <LoadingScreen message="Loading your profile…" />
+  // Only block on profileLoading during the INITIAL load (practitioner not yet fetched).
+  // If practitioner is already set, a background refresh (tab switch, token refresh)
+  // must never replace the current page with a spinner — it just updates silently.
+  if (practitioner === null && profileLoading) return <LoadingScreen message="Loading your profile…" />
+  if (practitioner === null) return <LoadingScreen message="Loading your profile…" />
   if (!practitioner.compliance_completed) return <Navigate to="/compliance/hipaa" replace />
   return <Outlet />
 }
@@ -50,7 +54,8 @@ function ComplianceGuard() {
   const { user, loading, practitioner, profileLoading } = useAuth()
   if (loading) return <LoadingScreen />
   if (!user) return <Navigate to="/auth/login" replace />
-  if (profileLoading || practitioner === null) return <LoadingScreen message="Loading your profile…" />
+  if (practitioner === null && profileLoading) return <LoadingScreen message="Loading your profile…" />
+  if (practitioner === null) return <LoadingScreen message="Loading your profile…" />
   if (practitioner.compliance_completed) return <Navigate to="/profile/setup" replace />
   return <Outlet />
 }
@@ -59,7 +64,8 @@ function ProfileSetupGuard() {
   const { user, loading, practitioner, profileLoading } = useAuth()
   if (loading) return <LoadingScreen />
   if (!user) return <Navigate to="/auth/login" replace />
-  if (profileLoading || practitioner === null) return <LoadingScreen message="Loading your profile…" />
+  if (practitioner === null && profileLoading) return <LoadingScreen message="Loading your profile…" />
+  if (practitioner === null) return <LoadingScreen message="Loading your profile…" />
   if (!practitioner.compliance_completed) return <Navigate to="/compliance/hipaa" replace />
   if ((practitioner as any).profile_completed) return <Navigate to="/dashboard" replace />
   return <Outlet />
@@ -69,7 +75,8 @@ function RedirectIfAuth({ children }: { children: React.ReactNode }) {
   const { user, loading, practitioner, profileLoading } = useAuth()
   if (loading) return <LoadingScreen />
   if (user) {
-    if (profileLoading || practitioner === null) return <LoadingScreen />
+    if (practitioner === null && profileLoading) return <LoadingScreen />
+    if (practitioner === null) return <LoadingScreen />
     if (!practitioner.compliance_completed) return <Navigate to="/compliance/hipaa" replace />
     if (!(practitioner as any).profile_completed) return <Navigate to="/profile/setup" replace />
     return <Navigate to="/dashboard" replace />

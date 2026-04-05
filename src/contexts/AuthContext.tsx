@@ -44,8 +44,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadProfile = useCallback(async (userId: string) => {
     setProfileLoading(true)
     try {
-      const profile = await fetchProfile(userId)
-      setPractitioner(profile)
+      // 6s timeout — the organisations join can be slow on cold Supabase instances.
+      // If it times out, we keep whatever practitioner state we already have.
+      const timeout = new Promise<null>(resolve => setTimeout(() => resolve(null), 6000))
+      const profile = await Promise.race([fetchProfile(userId), timeout])
+      // Only update if we got a real profile back — don't overwrite with null on timeout
+      if (profile !== null) setPractitioner(profile)
+    } catch (e) {
+      console.error('[SPPS Auth] loadProfile failed:', e)
     } finally {
       setProfileLoading(false)
     }
@@ -100,7 +106,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event === 'SIGNED_IN') {
         setSession(session)
         setUser(session?.user ?? null)
-        if (session?.user) await loadProfile(session.user.id)
+        // Only fetch profile if we don't already have one loaded.
+        // Tab-focus triggers SIGNED_IN repeatedly — re-fetching each time
+        // causes the spinner to appear on every tab switch.
+        if (session?.user) {
+          setPractitioner(prev => {
+            if (prev === null) {
+              // No profile yet — load it (this is a genuine new sign-in)
+              loadProfile(session.user!.id)
+            }
+            // Already have a profile — keep it, skip the slow DB fetch
+            return prev
+          })
+        }
         return
       }
 
