@@ -12,7 +12,7 @@ interface AuthContextValue {
   profileLoading:   boolean        // practitioner profile loading
   authError:        string | null
   signIn:           (email: string, password: string) => Promise<void>
-  signUp:           (email: string, password: string, meta?: Partial<Practitioner>) => Promise<void>
+  signUp:           (email: string, password: string, meta?: Partial<Practitioner>) => Promise<{ confirmEmail: boolean }>
   signOut:          () => Promise<void>
   refreshProfile:   () => Promise<void>
   clearError:       () => void
@@ -200,7 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   // ── Sign Up ─────────────────────────────────────────────────────────────────
-  async function signUp(email: string, password: string, meta?: Partial<Practitioner>) {
+  async function signUp(email: string, password: string, meta?: Partial<Practitioner>): Promise<{ confirmEmail: boolean }> {
     setAuthError(null)
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -219,37 +219,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(m)
     }
 
-    if (data.user) {
-      // The DB trigger (handle_new_user) already created the practitioners row
-      // server-side. This client-side upsert is a safety net in case the trigger
-      // isn't deployed yet. It only runs if data.session is present (i.e. email
-      // confirmation is disabled). If email confirmation is enabled, data.session
-      // is null, auth.uid() would be null, and the upsert would fail RLS — so we
-      // skip it and let the trigger handle row creation.
-      if (data.session) {
-        const { error: profileError } = await supabase.from('practitioners').upsert({
-          id:                   data.user.id,
-          email,
-          first_name:           meta?.first_name ?? '',
-          last_name:            meta?.last_name  ?? '',
-          role:                 'sport_psychologist',
-          hipaa_acknowledged:   false,
-          compliance_completed: false,
-          profile_completed:    false,
-          notification_email:   true,
-          notification_sms:     false,
-        }, { onConflict: 'id' })
+    // ── Email confirmation is enabled ──────────────────────────────
+    // data.session is null when Supabase requires email confirmation.
+    // In that case auth.uid() is null, RLS blocks everything, and we
+    // must NOT attempt loadProfile or client-side upserts.  The DB
+    // trigger (handle_new_user) has already created the practitioners
+    // row server-side.  We just tell the UI to show a "check email"
+    // message.
+    if (!data.session) {
+      console.info('[SPPS Auth] signUp: email confirmation required — skipping loadProfile')
+      return { confirmEmail: true }
+    }
 
-        if (profileError) {
-          console.warn('[SPPS Auth] Client-side profile upsert failed (trigger is primary):', profileError.message)
-        }
+    // ── Email confirmation is disabled — session available ─────────
+    if (data.user) {
+      // Safety-net upsert in case the trigger isn't deployed yet
+      const { error: profileError } = await supabase.from('practitioners').upsert({
+        id:                   data.user.id,
+        email,
+        first_name:           meta?.first_name ?? '',
+        last_name:            meta?.last_name  ?? '',
+        role:                 'sport_psychologist',
+        hipaa_acknowledged:   false,
+        compliance_completed: false,
+        profile_completed:    false,
+        notification_email:   true,
+        notification_sms:     false,
+      }, { onConflict: 'id' })
+
+      if (profileError) {
+        console.warn('[SPPS Auth] Client-side profile upsert failed (trigger is primary):', profileError.message)
       }
 
-      // Load profile — will find the row created by trigger or upsert above.
-      // If neither worked yet (e.g. replication lag), recovery logic in
-      // loadProfile will attempt to create the row once more.
       await loadProfile(data.user.id)
     }
+
+    return { confirmEmail: false }
   }
 
   // ── Sign Out ────────────────────────────────────────────────────────────────

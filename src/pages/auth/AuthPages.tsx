@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff, MailCheck } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button, Input, Alert } from '@/components/ui'
 import LogoBrand from '@/components/LogoBrand'
@@ -102,6 +102,7 @@ export function SignupPage() {
   const [form, setForm] = useState({ email: '', password: '', first_name: '', last_name: '' })
   const [show, setShow] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [confirmEmail, setConfirmEmail] = useState(false)
 
   function set(k: keyof typeof form) {
     return (e: React.ChangeEvent<HTMLInputElement>) => setForm(f => ({ ...f, [k]: e.target.value }))
@@ -112,13 +113,48 @@ export function SignupPage() {
     clearError()
     setLoading(true)
     try {
-      await signUp(form.email, form.password, { first_name: form.first_name, last_name: form.last_name })
-      navigate('/compliance/hipaa', { replace: true })
+      const result = await signUp(form.email, form.password, { first_name: form.first_name, last_name: form.last_name })
+      if (result.confirmEmail) {
+        // Email confirmation is required — show "check your email" screen
+        setConfirmEmail(true)
+      } else {
+        // No confirmation needed — proceed to compliance onboarding
+        navigate('/compliance/hipaa', { replace: true })
+      }
     } catch {
       // error displayed via authError
     } finally {
       setLoading(false)
     }
+  }
+
+  // ── Email confirmation sent screen ──────────────────────────────
+  if (confirmEmail) {
+    return (
+      <AuthLayout title="Check your email" subtitle="We've sent a confirmation link">
+        <div className="flex flex-col items-center text-center gap-4 py-6">
+          <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center">
+            <MailCheck className="w-8 h-8 text-blue-600" />
+          </div>
+          <div>
+            <p className="text-gray-700 mb-1">
+              A confirmation link has been sent to
+            </p>
+            <p className="font-semibold text-gray-900">{form.email}</p>
+          </div>
+          <p className="text-sm text-gray-500 max-w-sm">
+            Click the link in the email to activate your account, then come back here to sign in.
+            If you don't see it, check your spam folder.
+          </p>
+          <Link
+            to="/auth/login"
+            className="mt-4 inline-flex items-center justify-center rounded-lg bg-gradient-spps px-6 py-2.5 text-sm font-medium text-white hover:opacity-90 transition"
+          >
+            Go to Sign In
+          </Link>
+        </div>
+      </AuthLayout>
+    )
   }
 
   return (
