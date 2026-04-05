@@ -119,21 +119,6 @@ const PROFILING_DOMAINS = [
   },
 ]
 
-
-// ── Radar label helper ────────────────────────────────────────────────────────
-// Recharts radar BREAKS silently when two subjects share the same string.
-// "Confidence (Ability)" and "Confidence (Interpersonal)" both split to
-// "Confidence" — so we prefer the parenthetical text if it exists.
-function getRadarLabel(label: string): string {
-  const paren = label.match(/\(([^)]+)\)/)
-  if (paren) {
-    // e.g. "Confidence (Ability)" → "Ability", "Loss of Self-Consciousness" stays as first word
-    return paren[1].slice(0, 7)
-  }
-  // No parenthetical — use first meaningful word, up to 8 chars
-  return label.split(' ')[0].slice(0, 8)
-}
-
 interface ProfileEntry {
   id: string
   athlete_id: string
@@ -733,7 +718,7 @@ function PerformanceProfilingSection({ athletes, profiles, filterAthleteId, onFi
           const domainProfiles = byDomain[domain.id] ?? []
           const latest = domainProfiles[0]
           const radarData = latest ? domain.dimensions.map(d => ({
-            subject: getRadarLabel(d.label),
+            subject: d.label.split(' ')[0],
             value: latest.scores[d.key] ?? 0,
             fullMark: 10,
           })) : []
@@ -801,7 +786,7 @@ function PerformanceProfilingSection({ athletes, profiles, filterAthleteId, onFi
                   <div className="mt-3 flex flex-wrap gap-2">
                     {DimScores.map(ds => (
                       <div key={ds.name} className="flex items-center gap-1.5 text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded-lg">
-                        <span className="text-gray-400 truncate max-w-24">{getRadarLabel(ds.name)}</span>
+                        <span className="text-gray-400 truncate max-w-24">{ds.name.split(' ')[0]}</span>
                         <span className="font-bold" style={{ color: ds.score >= 7 ? '#16a34a' : ds.score >= 4 ? '#d97706' : '#dc2626' }}>
                           {ds.score}
                         </span>
@@ -821,7 +806,7 @@ function PerformanceProfilingSection({ athletes, profiles, filterAthleteId, onFi
 
 function ProfileEntryModal({ domain, domains, athletes, athleteId, scores, notes, saving, onDomainChange, onAthleteChange, onScoreChange, onNotesChange, onSave, onClose }: any) {
   const radarData = domain.dimensions.map((d: any) => ({
-    subject: getRadarLabel(d.label),
+    subject: d.label.split(' ')[0],
     value: scores[d.key] ?? 0,
     fullMark: 10,
   }))
