@@ -330,19 +330,6 @@ export function DataPrivacyPage() {
         return
       }
 
-      // Step 2: Verify the update actually persisted — don't trust a 0-row silent success
-      const { data: verifyProfile } = await supabase
-        .from('practitioners')
-        .select('compliance_completed')
-        .eq('id', user.id)
-        .single()
-
-      if (!verifyProfile?.compliance_completed) {
-        setError('Setup could not be verified. Please try again or contact support@winmindperform.com')
-        setLoading(false)
-        return
-      }
-
       // Step 3: Refresh the in-memory profile so AuthContext knows compliance is done
       await refreshProfile()
 
