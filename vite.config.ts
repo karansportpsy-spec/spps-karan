@@ -8,11 +8,20 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-vendor':    ['react', 'react-dom', 'react-router-dom'],
-          'query-vendor':    ['@tanstack/react-query'],
-          'charts-vendor':   ['recharts'],
-          'supabase-vendor': ['@supabase/supabase-js'],
+        // Vite 8 / rolldown requires manualChunks to be a function, not an object
+        manualChunks(id) {
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('node_modules/react-router-dom')) {
+            return 'react-vendor'
+          }
+          if (id.includes('node_modules/@tanstack')) {
+            return 'query-vendor'
+          }
+          if (id.includes('node_modules/recharts')) {
+            return 'charts-vendor'
+          }
+          if (id.includes('node_modules/@supabase')) {
+            return 'supabase-vendor'
+          }
         },
       },
     },
