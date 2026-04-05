@@ -44,13 +44,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadProfile = useCallback(async (userId: string) => {
     setProfileLoading(true)
     try {
-      // 6 s timeout — the organisations join can be slow on cold Supabase instances.
-      // If it times out we keep whatever practitioner state we already have.
-      const timeout  = new Promise<null>(resolve => setTimeout(() => resolve(null), 6000))
-      const profile  = await Promise.race([fetchProfile(userId), timeout])
-      if (profile !== null) setPractitioner(profile)  // don't overwrite on timeout
+      // Use a sentinel to distinguish "timed out" from "no row found".
+      // "timed out" → keep existing practitioner (don't flash null during tab switch).
+      // "null row"  → practitioners row missing; create it then retry once.
+      const TIMED_OUT = Symbol('timed_out')
+      const timeout   = new Promise<typeof TIMED_OUT>(resolve =>
+        setTimeout(() => resolve(TIMED_OUT), 6000)
+      )
+      const result = await Promise.race([fetchProfile(userId), timeout])
+
+      if (result === TIMED_OUT) {
+        // Slow DB — keep whatever we already have; do NOT set null
+        console.warn('[SPPS Auth] loadProfile timed out — keeping existing state')
+        return
+      }
+
+      if (result !== null) {
+        // Happy path: row exists and loaded fine
+        setPractitioner(result)
+        return
+      }
+
+      // result === null → no practitioners row exists yet.
+      // This happens when the DB trigger hasn't fired yet or the client-side
+      // upsert in signUp failed. Attempt to create the row from auth metadata.
+      console.warn('[SPPS Auth] No practitioners row — attempting recovery create')
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+      if (authUser) {
+        await supabase.from('practitioners').upsert({
+          id:                   authUser.id,
+          email:                authUser.email ?? '',
+          first_name:           authUser.user_metadata?.first_name ?? '',
+          last_name:            authUser.user_metadata?.last_name  ?? '',
+          role:                 authUser.user_metadata?.role ?? 'sport_psychologist',
+          hipaa_acknowledged:   false,
+          compliance_completed: false,
+          profile_completed:    false,
+          notification_email:   true,
+          notification_sms:     false,
+        }, { onConflict: 'id' })
+
+        // Retry fetch once after creating the row
+        const recovered = await fetchProfile(authUser.id)
+        setPractitioner(recovered)  // may still be null if RLS blocks — that's ok,
+                                    // router will redirect to login
+      } else {
+        setPractitioner(null)
+      }
     } catch (e) {
       console.error('[SPPS Auth] loadProfile failed:', e)
+      setPractitioner(null)
     } finally {
       setProfileLoading(false)
     }
@@ -175,25 +218,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthError(m)
       throw new Error(m)
     }
-    if (data.user) {
-      // Upsert practitioner profile — safe to re-run if signup was partially complete
-      const { error: profileError } = await supabase.from('practitioners').upsert({
-        id:                   data.user.id,
-        email,
-        first_name:           meta?.first_name ?? '',
-        last_name:            meta?.last_name  ?? '',
-        role:                 meta?.role ?? 'sport_psychologist',
-        hipaa_acknowledged:   false,
-        compliance_completed: false,
-        profile_completed:    false,   // explicit — don't rely on column DEFAULT
-        notification_email:   true,
-        notification_sms:     false,
-      }, { onConflict: 'id' })
 
-      if (profileError) {
-        console.error('[SPPS Auth] Failed to create practitioner profile:', profileError.message)
+    if (data.user) {
+      // The DB trigger (handle_new_user) already created the practitioners row
+      // server-side. This client-side upsert is a safety net in case the trigger
+      // isn't deployed yet. It only runs if data.session is present (i.e. email
+      // confirmation is disabled). If email confirmation is enabled, data.session
+      // is null, auth.uid() would be null, and the upsert would fail RLS — so we
+      // skip it and let the trigger handle row creation.
+      if (data.session) {
+        const { error: profileError } = await supabase.from('practitioners').upsert({
+          id:                   data.user.id,
+          email,
+          first_name:           meta?.first_name ?? '',
+          last_name:            meta?.last_name  ?? '',
+          role:                 'sport_psychologist',
+          hipaa_acknowledged:   false,
+          compliance_completed: false,
+          profile_completed:    false,
+          notification_email:   true,
+          notification_sms:     false,
+        }, { onConflict: 'id' })
+
+        if (profileError) {
+          console.warn('[SPPS Auth] Client-side profile upsert failed (trigger is primary):', profileError.message)
+        }
       }
 
+      // Load profile — will find the row created by trigger or upsert above.
+      // If neither worked yet (e.g. replication lag), recovery logic in
+      // loadProfile will attempt to create the row once more.
       await loadProfile(data.user.id)
     }
   }
