@@ -311,16 +311,27 @@ export function DataPrivacyPage() {
     setError('')
 
     try {
-      // Step 1: Upsert (not update) so the row is created if it somehow doesn't exist
-      // A plain .update() silently succeeds with 0 rows affected if the row is missing,
-      // which means compliance_completed never gets set and the user loops back to step 1
+      const now = new Date().toISOString()
+
+      // ── CRITICAL: Set ALL 4 compliance gate flags ──────────────────
+      // The DB trigger spps_sync_compliance_completed() recalculates
+      //   compliance_completed = (hipaa AND user_agreement AND terms AND data_privacy)
+      // If any flag is missing, the trigger overwrites compliance_completed
+      // back to false and the user loops back to step 1.
       const { error: dbError } = await supabase
         .from('practitioners')
         .upsert({
-          id:                   user.id,
-          email:                user.email ?? '',
-          compliance_completed: true,
-          hipaa_acknowledged:   true,
+          id:                         user.id,
+          email:                      user.email ?? '',
+          hipaa_acknowledged:         true,
+          hipaa_acknowledged_at:      now,
+          user_agreement_accepted:    true,
+          user_agreement_accepted_at: now,
+          terms_accepted:             true,
+          terms_accepted_at:          now,
+          data_privacy_accepted:      true,
+          data_privacy_accepted_at:   now,
+          analytics_consent:          true,
         }, { onConflict: 'id' })
 
       if (dbError) {
@@ -330,10 +341,7 @@ export function DataPrivacyPage() {
         return
       }
 
-      // Upsert succeeded — refresh profile and navigate to profile setup.
-      // The old verify SELECT used .single() which throws when row count is
-      // unexpected, causing false "could not be verified" errors even when
-      // compliance_completed was correctly saved.
+      // Refresh in-memory practitioner so router guards see the new state
       await refreshProfile()
       window.location.replace('/profile/setup')
 

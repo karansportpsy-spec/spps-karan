@@ -35,7 +35,7 @@ const SPECIALISATIONS = [
 ]
 
 export default function ProfileSetupPage() {
-  const { user } = useAuth()
+  const { user, refreshProfile } = useAuth()
   const navigate = useNavigate()
 
   const [role, setRole]               = useState('')
@@ -46,16 +46,18 @@ export default function ProfileSetupPage() {
   const [specs, setSpecs]             = useState<string[]>([])
   const [bio, setBio]                 = useState('')
   const [roleError, setRoleError]     = useState(false)
+  const [saving, setSaving]           = useState(false)
 
   function toggleSpec(s: string) {
     setSpecs(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])
   }
 
-  // Fire-and-forget — we never wait for DB, navigate immediately
-  async function persistToDb(completed: boolean) {
+  // Save profile and navigate — MUST await so router guards see updated state
+  async function persistAndNavigate(completed: boolean) {
     if (!user) return
+    setSaving(true)
     try {
-      await supabase.from('practitioners').upsert({
+      const { error } = await supabase.from('practitioners').upsert({
         id:                   user.id,
         email:                user.email ?? '',
         professional_role:    role || null,
@@ -67,24 +69,29 @@ export default function ProfileSetupPage() {
         bio:                  bio || null,
         profile_completed:    completed,
       }, { onConflict: 'id' })
+
+      if (error) {
+        console.warn('[SPPS ProfileSetup] Save failed:', error.message)
+      }
+
+      // Refresh in-memory practitioner state so RequireAuth / RedirectIfAuth
+      // see profile_completed = true and don't redirect back here
+      await refreshProfile()
     } catch (err) {
-      // Non-blocking — profile can be updated later in Settings
-      console.warn('[SPPS ProfileSetup] Background save failed:', err)
+      console.warn('[SPPS ProfileSetup] Save error:', err)
     }
+    // Always navigate even if save failed — user can fix in Settings
+    navigate('/dashboard', { replace: true })
   }
 
   function handleSave() {
     if (!role) { setRoleError(true); return }
     setRoleError(false)
-    persistToDb(true)          // fire-and-forget
-    navigate('/dashboard', { replace: true })
+    persistAndNavigate(true)
   }
 
   function handleSkip() {
-    // Must be true — if false, RedirectIfAuth sees !profile_completed and
-    // sends the user back to /profile/setup on every subsequent login.
-    persistToDb(true)          // fire-and-forget
-    navigate('/dashboard', { replace: true })
+    persistAndNavigate(true)
   }
 
   return (
@@ -262,15 +269,17 @@ export default function ProfileSetupPage() {
           <div className="px-6 pb-6 pt-2 flex items-center justify-between gap-3">
             <button
               onClick={handleSkip}
-              className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+              disabled={saving}
+              className="text-sm text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
             >
               Skip for now — complete in Settings later
             </button>
             <button
               onClick={handleSave}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl shadow-sm transition-all active:scale-95"
+              disabled={saving}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl shadow-sm transition-all active:scale-95 disabled:opacity-60"
             >
-              Save &amp; Go to Dashboard
+              {saving ? 'Saving…' : 'Save & Go to Dashboard'}
               <ChevronRight size={16} />
             </button>
           </div>
