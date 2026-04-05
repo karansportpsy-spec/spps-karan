@@ -41,9 +41,7 @@ function RequireAuth() {
   const location = useLocation()
   if (loading) return <LoadingScreen />
   if (!user) return <Navigate to="/auth/login" state={{ from: location }} replace />
-  // Only block on profileLoading during the INITIAL load (practitioner not yet fetched).
-  // If practitioner is already set, a background refresh (tab switch, token refresh)
-  // must never replace the current page with a spinner — it just updates silently.
+  // Show spinner only on initial load — not on background refresh (tab switch etc.)
   if (practitioner === null && profileLoading) return <LoadingScreen message="Loading your profile…" />
   if (practitioner === null) return <LoadingScreen message="Loading your profile…" />
   if (!practitioner.compliance_completed) return <Navigate to="/compliance/hipaa" replace />
@@ -64,10 +62,11 @@ function ProfileSetupGuard() {
   const { user, loading, practitioner, profileLoading } = useAuth()
   if (loading) return <LoadingScreen />
   if (!user) return <Navigate to="/auth/login" replace />
+  // Show spinner only on initial load — not on background refresh (tab switch etc.)
   if (practitioner === null && profileLoading) return <LoadingScreen message="Loading your profile…" />
   if (practitioner === null) return <LoadingScreen message="Loading your profile…" />
   if (!practitioner.compliance_completed) return <Navigate to="/compliance/hipaa" replace />
-  if ((practitioner as any).profile_completed) return <Navigate to="/dashboard" replace />
+  if (practitioner.profile_completed) return <Navigate to="/dashboard" replace />
   return <Outlet />
 }
 
@@ -78,7 +77,7 @@ function RedirectIfAuth({ children }: { children: React.ReactNode }) {
     if (practitioner === null && profileLoading) return <LoadingScreen />
     if (practitioner === null) return <LoadingScreen />
     if (!practitioner.compliance_completed) return <Navigate to="/compliance/hipaa" replace />
-    if (!(practitioner as any).profile_completed) return <Navigate to="/profile/setup" replace />
+    if (!practitioner.profile_completed) return <Navigate to="/profile/setup" replace />
     return <Navigate to="/dashboard" replace />
   }
   return <>{children}</>

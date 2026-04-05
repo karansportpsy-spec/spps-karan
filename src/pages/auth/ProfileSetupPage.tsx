@@ -81,7 +81,9 @@ export default function ProfileSetupPage() {
   }
 
   function handleSkip() {
-    persistToDb(false)         // fire-and-forget
+    // Must be true — if false, RedirectIfAuth sees !profile_completed and
+    // sends the user back to /profile/setup on every subsequent login.
+    persistToDb(true)          // fire-and-forget
     navigate('/dashboard', { replace: true })
   }
 

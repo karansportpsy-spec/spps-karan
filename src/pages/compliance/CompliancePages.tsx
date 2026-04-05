@@ -330,11 +330,11 @@ export function DataPrivacyPage() {
         return
       }
 
-      // Step 3: Refresh the in-memory profile so AuthContext knows compliance is done
+      // Upsert succeeded — refresh profile and navigate to profile setup.
+      // The old verify SELECT used .single() which throws when row count is
+      // unexpected, causing false "could not be verified" errors even when
+      // compliance_completed was correctly saved.
       await refreshProfile()
-
-      // Step 4: Full browser reload — bypasses any React Router race condition
-      // where the guard might still hold the old practitioner state
       window.location.replace('/profile/setup')
 
     } catch (err: any) {

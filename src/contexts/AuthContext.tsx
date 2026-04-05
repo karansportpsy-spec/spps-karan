@@ -44,12 +44,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadProfile = useCallback(async (userId: string) => {
     setProfileLoading(true)
     try {
-      // 6s timeout — the organisations join can be slow on cold Supabase instances.
-      // If it times out, we keep whatever practitioner state we already have.
-      const timeout = new Promise<null>(resolve => setTimeout(() => resolve(null), 6000))
-      const profile = await Promise.race([fetchProfile(userId), timeout])
-      // Only update if we got a real profile back — don't overwrite with null on timeout
-      if (profile !== null) setPractitioner(profile)
+      // 6 s timeout — the organisations join can be slow on cold Supabase instances.
+      // If it times out we keep whatever practitioner state we already have.
+      const timeout  = new Promise<null>(resolve => setTimeout(() => resolve(null), 6000))
+      const profile  = await Promise.race([fetchProfile(userId), timeout])
+      if (profile !== null) setPractitioner(profile)  // don't overwrite on timeout
     } catch (e) {
       console.error('[SPPS Auth] loadProfile failed:', e)
     } finally {
@@ -106,17 +105,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event === 'SIGNED_IN') {
         setSession(session)
         setUser(session?.user ?? null)
-        // Only fetch profile if we don't already have one loaded.
-        // Tab-focus triggers SIGNED_IN repeatedly — re-fetching each time
-        // causes the spinner to appear on every tab switch.
+        // Only fetch profile if we don't already have one.
+        // SIGNED_IN fires on every tab-focus — re-fetching each time
+        // causes the spinner to appear on every switch.
         if (session?.user) {
           setPractitioner(prev => {
-            if (prev === null) {
-              // No profile yet — load it (this is a genuine new sign-in)
-              loadProfile(session.user!.id)
-            }
-            // Already have a profile — keep it, skip the slow DB fetch
-            return prev
+            if (prev === null) loadProfile(session.user!.id)  // genuine new sign-in
+            return prev                                        // already loaded — keep it
           })
         }
         return
@@ -190,6 +185,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role:                 meta?.role ?? 'sport_psychologist',
         hipaa_acknowledged:   false,
         compliance_completed: false,
+        profile_completed:    false,   // explicit — don't rely on column DEFAULT
         notification_email:   true,
         notification_sms:     false,
       }, { onConflict: 'id' })

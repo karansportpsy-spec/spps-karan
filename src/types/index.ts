@@ -30,14 +30,14 @@ export interface Practitioner {
   organisation_id?: string
   organisation?: Organisation
 
-  // ── Compliance gates ───────────────────────────────────────
+  // ── Compliance gates ─────────────────────────────────────
   hipaa_acknowledged:   boolean
   compliance_completed: boolean
 
-  // ── Profile setup fields (added by migration) ──────────────
-  // All optional — may be null for users who signed up before migration
-  profile_completed:    boolean       // false until ProfileSetupPage saves
-  professional_role?:   string        // e.g. 'sport_psychologist'
+  // ── Profile setup (added by migration) ───────────────────
+  // Optional — null until the user completes ProfileSetupPage
+  profile_completed:    boolean
+  professional_role?:   string
   organisation_name?:   string
   organisation_type?:   string
   years_of_practice?:   number
@@ -45,7 +45,7 @@ export interface Practitioner {
   highest_qualification?: string
   professional_registration?: string
 
-  // ── Notification preferences ───────────────────────────────
+  // ── Preferences ──────────────────────────────────────────
   notification_email: boolean
   notification_sms:   boolean
 
