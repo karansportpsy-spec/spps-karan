@@ -8,7 +8,7 @@ import { PageHeader, Button, Card, Badge, Avatar, Modal, Select, Spinner, EmptyS
 import { useAssessments, useCreateAssessment } from '@/hooks/useData'
 import { useAthletes } from '@/hooks/useAthletes'
 import { fmtDate } from '@/lib/utils'
-import { RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, Legend } from 'recharts'
+import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, Legend } from 'recharts'
 import { INSTRUMENTS, scoreAssessment, type AssessmentInstrument } from '@/lib/assessmentInstruments'
 import type { AssessmentTool } from '@/types'
 import OfflineAssessmentModal from '@/components/OfflineAssessmentModal'   // ← NEW
@@ -119,7 +119,19 @@ const PROFILING_DOMAINS = [
   },
 ]
 
-interface ProfileEntry {
+// ── Helper: produce unique short labels for RadarChart subjects ───────────────
+// d.label.split(' ')[0] caused "Confidence" to appear twice for
+// "Confidence (Ability)" and "Confidence (Interpersonal)", breaking Recharts.
+function getRadarLabel(label: string): string {
+  const paren = label.match(/\((\w+)/)          // extract first word inside parens
+  if (paren) {
+    return label.split(' ')[0].slice(0, 7) + ' ' + paren[1].slice(0, 5)
+  }
+  const words = label.split(' ')
+  return words.length === 1
+    ? label.slice(0, 9)
+    : words[0].slice(0, 6) + ' ' + words[1].slice(0, 5)
+}
   id: string
   athlete_id: string
   domain_id: string
@@ -433,7 +445,6 @@ export default function AssessmentsPage() {
                               <ResponsiveContainer width="100%" height={160}>
                                 <RadarChart data={radarData}>
                                   <PolarGrid />
-                                  <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
                                   <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9 }} />
                                   <Radar dataKey="value" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.2} />
                                   <Tooltip />
@@ -656,7 +667,6 @@ export default function AssessmentsPage() {
               <ResponsiveContainer width="100%" height={220}>
                 <RadarChart data={radarData}>
                   <PolarGrid />
-                                  <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
                   <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11 }} />
                   <Radar dataKey="value" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} />
                   <Tooltip formatter={(v: number) => [v, 'Score']} />
@@ -720,7 +730,7 @@ function PerformanceProfilingSection({ athletes, profiles, filterAthleteId, onFi
           const domainProfiles = byDomain[domain.id] ?? []
           const latest = domainProfiles[0]
           const radarData = latest ? domain.dimensions.map(d => ({
-            subject: d.label.split(' ')[0],
+            subject: getRadarLabel(d.label),
             value: latest.scores[d.key] ?? 0,
             fullMark: 10,
           })) : []
@@ -741,7 +751,6 @@ function PerformanceProfilingSection({ athletes, profiles, filterAthleteId, onFi
                 <ResponsiveContainer width="100%" height={140}>
                   <RadarChart data={radarData} margin={{ top: 5, right: 15, bottom: 5, left: 15 }}>
                     <PolarGrid stroke="#e5e7eb" />
-                    <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
                     <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9, fill: '#6b7280' }} />
                     <Radar dataKey="value" stroke={domain.accent} fill={domain.accent} fillOpacity={0.25} strokeWidth={2} />
                     <Tooltip formatter={(v: number) => [v + '/10', 'Score']} />
@@ -776,7 +785,7 @@ function PerformanceProfilingSection({ athletes, profiles, filterAthleteId, onFi
               const avg = Object.values(p.scores as Record<string, number>).length
                 ? (Object.values(p.scores as Record<string, number>).reduce((a, b) => a + b, 0) / Object.values(p.scores as Record<string, number>).length).toFixed(1)
                 : '—'
-              const DimScores = domain.dimensions.map(d => ({ name: d.label, score: p.scores[d.key] ?? 0 }))
+              const DimScores = domain.dimensions.map(d => ({ name: getRadarLabel(d.label), score: p.scores[d.key] ?? 0 }))
               return (
                 <Card key={p.id} className="p-4">
                   <div className="flex items-center gap-3">
@@ -809,7 +818,7 @@ function PerformanceProfilingSection({ athletes, profiles, filterAthleteId, onFi
 
 function ProfileEntryModal({ domain, domains, athletes, athleteId, scores, notes, saving, onDomainChange, onAthleteChange, onScoreChange, onNotesChange, onSave, onClose }: any) {
   const radarData = domain.dimensions.map((d: any) => ({
-    subject: d.label.split(' ')[0],
+    subject: getRadarLabel(d.label),
     value: scores[d.key] ?? 0,
     fullMark: 10,
   }))
@@ -885,7 +894,6 @@ function ProfileEntryModal({ domain, domains, athletes, athleteId, scores, notes
               <ResponsiveContainer width="100%" height={220}>
                 <RadarChart data={radarData} margin={{ top: 10, right: 20, bottom: 10, left: 20 }}>
                   <PolarGrid stroke="#e5e7eb" />
-                    <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
                   <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10, fill: '#6b7280' }} />
                   <Radar dataKey="value" stroke={domain.accent} fill={domain.accent} fillOpacity={0.3} strokeWidth={2} />
                   <Tooltip formatter={(v: number) => [v + '/10', 'Score']} />
