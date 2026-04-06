@@ -20,7 +20,7 @@ import AthleteDocumentsPanel, { useAthleteDocuments } from '@/components/Athlete
 import { FlaskConical, Watch, Dumbbell, Eye } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  RadarChart, Radar, PolarGrid, PolarAngleAxis,
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   BarChart, Bar, CartesianGrid, Legend,
 } from 'recharts'
 import type { Report, ReportType } from '@/types'
@@ -32,6 +32,8 @@ const TABS = [
   { id: 'checkins',      label: 'Check-ins',      icon: Activity },
   { id: 'assessments',   label: 'Assessments',    icon: Brain },
   { id: 'interventions', label: 'Interventions',  icon: Target },
+  { id: 'injury',        label: 'Injury Psychology', icon: Heart },
+  { id: 'consent',       label: 'Consent Forms',  icon: Shield },
   { id: 'reports',       label: 'Reports',        icon: FileText },
   { id: 'documents',     label: 'Documents',      icon: Folder },
   { id: 'physio',        label: 'Physio & Wearables', icon: Activity },
@@ -111,6 +113,60 @@ function useAthletePerfProfiles(athleteId?: string) {
         .eq('practitioner_id', user!.id)
         .eq('athlete_id', athleteId!)
         .order('created_at', { ascending: false })
+      if (error) return []
+      return data ?? []
+    },
+  })
+}
+
+function useAthleteConsent(athleteId?: string) {
+  const { user } = useAuth()
+  return useQuery({
+    queryKey: ['consent_forms', user?.id, athleteId],
+    enabled: !!user && !!athleteId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('consent_forms')
+        .select('*')
+        .eq('practitioner_id', user!.id)
+        .eq('athlete_id', athleteId!)
+        .order('created_at', { ascending: false })
+      if (error) return []
+      return data ?? []
+    },
+  })
+}
+
+function useAthleteInjuries(athleteId?: string) {
+  const { user } = useAuth()
+  return useQuery({
+    queryKey: ['injury_records', user?.id, athleteId],
+    enabled: !!user && !!athleteId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('injury_records')
+        .select('*')
+        .eq('practitioner_id', user!.id)
+        .eq('athlete_id', athleteId!)
+        .order('date_of_injury', { ascending: false })
+      if (error) return []
+      return data ?? []
+    },
+  })
+}
+
+function useAthletePsychReadiness(athleteId?: string) {
+  const { user } = useAuth()
+  return useQuery({
+    queryKey: ['psych_readiness', user?.id, athleteId],
+    enabled: !!user && !!athleteId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('psych_readiness')
+        .select('*')
+        .eq('practitioner_id', user!.id)
+        .eq('athlete_id', athleteId!)
+        .order('assessed_at', { ascending: false })
       if (error) return []
       return data ?? []
     },
@@ -629,6 +685,7 @@ function AssessmentsTab({ assessments }: { assessments: any[] }) {
                   <ResponsiveContainer width="100%" height={150}>
                     <RadarChart data={radarData}>
                       <PolarGrid />
+                      <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
                       <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9 }} />
                       <Radar dataKey="value" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.2} />
                       <Tooltip />
@@ -875,7 +932,7 @@ function ReportsTab({ reports, athlete }: { reports: any[]; athlete: any }) {
 
 // ── Tab: AI Summary ───────────────────────────────────────────────────────────
 
-function AISummaryTab({ athlete, sessions, checkins, assessments, interventions, reports, documents = [], physioRecords = [], labSessions = [], perfProfiles = [], neuroRecords = [] }: any) {
+function AISummaryTab({ athlete, sessions, checkins, assessments, interventions, reports, documents = [], physioRecords = [], labSessions = [], perfProfiles = [], neuroRecords = [], consentForms = [], injuryRecords = [], psychReadiness = [] }: any) {
   const [summary, setSummary] = useState('')
   const [generating, setGenerating] = useState(false)
   const [status, setStatus] = useState('')
@@ -950,6 +1007,21 @@ function AISummaryTab({ athlete, sessions, checkins, assessments, interventions,
           return `  - ${r.platform} (${fmtDate(r.test_date ?? r.created_at)}) [${(r.context ?? '').replace(/_/g,' ')}]${avg != null ? ` avg=${avg}th %ile` : ''}${customSummary ? ` | ${customSummary}` : ''}${r.notes ? ` | Notes: ${r.notes.slice(0, 100)}` : ''}`
         }),
         ``,
+        consentForms.length > 0 ? `CONSENT FORMS (${consentForms.length} forms):` : '',
+        ...consentForms.map((c: any) =>
+          `  - ${c.form_type.replace(/_/g, ' ').toUpperCase()} | Status: ${c.status} | Signed by: ${c.signed_by || '—'}${c.signed_at ? ` on ${fmtDate(c.signed_at)}` : ''}${c.valid_until ? ` | Valid until: ${fmtDate(c.valid_until)}` : ''}${c.guardian_name ? ` | Guardian: ${c.guardian_name} (${c.guardian_relationship})` : ''}${c.notes ? ` | Notes: ${c.notes.slice(0, 100)}` : ''}`
+        ),
+        ``,
+        injuryRecords.length > 0 ? `INJURY RECORDS (${injuryRecords.length} injuries):` : '',
+        ...injuryRecords.map((inj: any) =>
+          `  - ${fmtDate(inj.date_of_injury)} [${inj.severity.toUpperCase()}/${inj.status}]: ${inj.diagnosis_text}${inj.osiics_code_1 ? ` (OSIICS: ${inj.osiics_code_1})` : ''} | Mechanism: ${inj.mechanism} | Context: ${inj.context}${inj.missed_days ? ` | ${inj.missed_days} days missed` : ''}${inj.missed_matches ? `, ${inj.missed_matches} matches missed` : ''}${inj.date_of_return ? ` | Returned: ${fmtDate(inj.date_of_return)}` : ' | Not yet returned'}${inj.psych_referral_needed ? ' | ⚠ Psych referral needed' : ''}${inj.notes ? ` | ${inj.notes.slice(0, 100)}` : ''}`
+        ),
+        ``,
+        psychReadiness.length > 0 ? `PSYCHOLOGICAL READINESS TO RETURN (${psychReadiness.length} assessments):` : '',
+        ...psychReadiness.map((pr: any) =>
+          `  - ${fmtDate(pr.assessed_at)}: ACL-RSI Total=${pr.acl_rsi_total} | TSK Total=${pr.tsk_total} | SIRSI Total=${pr.sirsi_total} | Overall Readiness=${pr.overall_readiness}% | Ready: ${pr.ready_to_return ? 'YES' : 'NO'}${pr.notes ? ` | ${pr.notes.slice(0, 100)}` : ''}`
+        ),
+        ``,
         documents.length > 0 ? `UPLOADED DOCUMENTS (${documents.length} total):` : '',
         ...documents.map((d: any) => [
           `  [${d.document_category.replace(/_/g,' ').toUpperCase()}] ${d.file_name}`,
@@ -989,6 +1061,12 @@ Evaluate interventions used and their outcomes.
 
 ## Clinical Formulation
 Integrate findings into a coherent formulation (predisposing, precipitating, perpetuating, protective factors).
+
+## Injury Psychology & Return-to-Sport Readiness
+If injury data exists, analyse psychological impact, readiness scores, and return-to-sport status.
+
+## Consent & Compliance Status
+Summarise consent form coverage and any gaps.
 
 ## Recommendations & Next Steps
 Concrete, prioritised clinical recommendations.
@@ -1099,6 +1177,9 @@ export default function CaseFormulationPage() {
   const { data: labSessions = [] }   = useAthleteLabSessions(athleteId)
   const { data: perfProfiles = [] }  = useAthletePerfProfiles(athleteId)
   const { data: neuroRecords = [] }  = useAthleteNeuro(athleteId)
+  const { data: consentForms = [] }  = useAthleteConsent(athleteId)
+  const { data: injuryRecords = [] } = useAthleteInjuries(athleteId)
+  const { data: psychReadiness = [] } = useAthletePsychReadiness(athleteId)
 
   const athlete = athletes.find(a => a.id === athleteId)
   const loading = loadS || loadC || loadA || loadI || loadR || loadD
@@ -2042,6 +2123,12 @@ export default function CaseFormulationPage() {
             {activeTab === 'checkins' && <CheckInsTab checkins={checkins} />}
             {activeTab === 'assessments' && <AssessmentsTab assessments={assessments} />}
             {activeTab === 'interventions' && <InterventionsTab interventions={interventions} />}
+            {activeTab === 'injury' && (
+              <InjuryPsychTab injuries={injuryRecords} readiness={psychReadiness} />
+            )}
+            {activeTab === 'consent' && (
+              <ConsentFormsTab forms={consentForms} />
+            )}
             {activeTab === 'reports' && <ReportsTab reports={reports} athlete={athlete} />}
             {activeTab === 'physio' && (
               <PhysioWearablesTab physioRecords={physioRecords} />
@@ -2074,7 +2161,8 @@ export default function CaseFormulationPage() {
             {activeTab === 'ai' && (
               <AISummaryTab athlete={athlete} sessions={sessions} checkins={checkins} physioRecords={physioRecords} labSessions={labSessions} perfProfiles={perfProfiles}
                 assessments={assessments} interventions={interventions} reports={reports}
-                documents={documents} neuroRecords={neuroRecords} />
+                documents={documents} neuroRecords={neuroRecords}
+                consentForms={consentForms} injuryRecords={injuryRecords} psychReadiness={psychReadiness} />
             )}
           </div>
 
@@ -2217,6 +2305,7 @@ function NeurocognitiveTab({ records }: { records: any[] }) {
               <ResponsiveContainer width="100%" height={200}>
                 <RadarChart data={radarData} margin={{ top: 5, right: 25, bottom: 5, left: 25 }}>
                   <PolarGrid stroke="#e5e7eb" />
+                    <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
                   <PolarAngleAxis dataKey="skill" tick={{ fontSize: 9, fill: '#6b7280' }} />
                   <Radar dataKey="percentile" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} strokeWidth={2} />
                 </RadarChart>
@@ -2460,6 +2549,88 @@ function LabTechTab({ labSessions }: { labSessions: any[] }) {
   )
 }
 
+// ── Injury Psychology Tab ──────────────────────────────────────────────────────
+
+function InjuryPsychTab({ injuries, readiness }: { injuries: any[]; readiness: any[] }) {
+  if (injuries.length === 0 && readiness.length === 0) return <EmptyData message="No injury records or readiness assessments for this athlete." />
+  return (
+    <div className="space-y-6">
+      <SectionHeader icon={Heart} title="Injury Records" count={injuries.length} color="rose" />
+      {injuries.map((inj: any) => (
+        <Card key={inj.id} className="p-4">
+          <div className="flex items-start justify-between mb-2">
+            <div>
+              <p className="font-semibold text-gray-900">{inj.diagnosis_text}</p>
+              <p className="text-xs text-gray-500">{inj.osiics_code_1 ? `OSIICS: ${inj.osiics_code_1}` : ''} {inj.osiics_body_part_1 ?? ''}</p>
+            </div>
+            <div className="flex gap-2">
+              <Badge label={inj.severity} className={inj.severity === 'severe' || inj.severity === 'career_threatening' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'} />
+              <Badge label={inj.status} className="bg-gray-100 text-gray-700" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-gray-600 mt-3">
+            <div><span className="text-gray-400">Date: </span>{fmtDate(inj.date_of_injury)}</div>
+            <div><span className="text-gray-400">Context: </span>{inj.context}</div>
+            <div><span className="text-gray-400">Mechanism: </span>{inj.mechanism}</div>
+            <div><span className="text-gray-400">Missed: </span>{inj.missed_days ?? '—'} days / {inj.missed_matches ?? '—'} matches</div>
+          </div>
+          {inj.date_of_return && <p className="text-xs text-green-600 mt-2">✓ Returned: {fmtDate(inj.date_of_return)}</p>}
+          {inj.psych_referral_needed && <p className="text-xs text-red-600 mt-1 font-semibold">⚠ Psychological referral needed</p>}
+          {inj.notes && <p className="text-xs text-gray-400 mt-2 italic">{inj.notes}</p>}
+        </Card>
+      ))}
+
+      {readiness.length > 0 && (
+        <>
+          <SectionHeader icon={TrendingUp} title="Psychological Readiness to Return" count={readiness.length} color="teal" />
+          {readiness.map((pr: any) => (
+            <Card key={pr.id} className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold text-gray-700">{fmtDate(pr.assessed_at)}</p>
+                <Badge label={pr.ready_to_return ? '✓ Ready' : '✗ Not Ready'} className={pr.ready_to_return ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'} />
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <StatCard label="ACL-RSI" value={pr.acl_rsi_total} sub="/ 100" />
+                <StatCard label="TSK" value={pr.tsk_total} sub="kinesiophobia" />
+                <StatCard label="SIRSI" value={pr.sirsi_total} />
+                <StatCard label="Overall" value={`${pr.overall_readiness}%`} />
+              </div>
+              {pr.notes && <p className="text-xs text-gray-400 mt-3 italic">{pr.notes}</p>}
+            </Card>
+          ))}
+        </>
+      )}
+    </div>
+  )
+}
+
+// ── Consent Forms Tab ─────────────────────────────────────────────────────────
+
+function ConsentFormsTab({ forms }: { forms: any[] }) {
+  if (forms.length === 0) return <EmptyData message="No consent forms for this athlete." />
+  const stColor: Record<string, string> = { signed: 'bg-green-100 text-green-700', pending: 'bg-amber-100 text-amber-700', expired: 'bg-red-100 text-red-700', uploaded: 'bg-blue-100 text-blue-700' }
+  return (
+    <div className="space-y-4">
+      <SectionHeader icon={Shield} title="Consent Forms" count={forms.length} color="indigo" />
+      {forms.map((f: any) => (
+        <Card key={f.id} className="p-4">
+          <div className="flex items-center justify-between mb-2">
+            <p className="font-semibold text-gray-900 text-sm">{f.form_type.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</p>
+            <Badge label={f.status} className={stColor[f.status] ?? 'bg-gray-100 text-gray-600'} />
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+            {f.signed_by && <div><span className="text-gray-400">Signed by: </span>{f.signed_by}</div>}
+            {f.signed_at && <div><span className="text-gray-400">Signed: </span>{fmtDate(f.signed_at)}</div>}
+            {f.valid_until && <div><span className="text-gray-400">Valid until: </span>{fmtDate(f.valid_until)}</div>}
+            {f.guardian_name && <div><span className="text-gray-400">Guardian: </span>{f.guardian_name} ({f.guardian_relationship})</div>}
+          </div>
+          {f.notes && <p className="text-xs text-gray-400 mt-2 italic">{f.notes}</p>}
+        </Card>
+      ))}
+    </div>
+  )
+}
+
 // ── Performance Profile Tab ───────────────────────────────────────────────────
 
 const DOMAIN_LABELS: Record<string, string> = {
@@ -2510,6 +2681,7 @@ function PerfProfileTab({ profiles }: { profiles: any[] }) {
                 <ResponsiveContainer width="100%" height={160}>
                   <RadarChart data={radarData} margin={{ top: 5, right: 20, bottom: 5, left: 20 }}>
                     <PolarGrid stroke="#e5e7eb" />
+                    <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
                     <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9, fill: '#6b7280' }} />
                     <Radar dataKey="value" stroke={color} fill={color} fillOpacity={0.25} strokeWidth={2} />
                   </RadarChart>
