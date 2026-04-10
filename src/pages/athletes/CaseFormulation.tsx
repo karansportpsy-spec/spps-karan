@@ -17,6 +17,7 @@ import { callGroq } from '@/lib/groq'
 import { riskColor, statusColor, fmtDate } from '@/lib/utils'
 import { anonymise, redactNote, ANONYMISATION_DISCLAIMER } from '@/lib/athleteUID'
 import AthleteDocumentsPanel, { useAthleteDocuments } from '@/components/AthleteDocumentsPanel'
+import EnableAthletePortal from '@/components/EnableAthletePortal'
 import { FlaskConical, Watch, Dumbbell, Eye } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -329,6 +330,13 @@ function OverviewTab({ athlete, sessions, checkins, assessments, interventions, 
                 <p className="text-sm text-gray-700 leading-relaxed">{athlete.notes}</p>
               </div>
             )}
+
+            {/* Athlete Portal Access */}
+            <EnableAthletePortal
+              athleteId={athlete.id}
+              athleteFirstName={athlete.first_name}
+              athleteEmail={athlete.email}
+            />
           </div>
         </div>
       </div>
