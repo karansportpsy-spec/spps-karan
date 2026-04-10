@@ -24,9 +24,9 @@ import {
   InterventionsPage, AIAssistantPage, ReportsPage, SettingsPage,
 } from '@/pages/AppPages'
 
-import AcceptInvitePage      from '@/pages/athlete/AcceptInvitePage'
-import AthleteDashboard      from '@/pages/athlete/AthleteDashboard'
-import AthleteMessagesPage   from '@/pages/athlete/AthleteMessagesPage'
+import AcceptInvitePage      from '@/pages/athletes/AcceptInvitePage'
+import AthleteDashboard      from '@/pages/athletes/AthleteDashboard'
+import AthleteMessagesPage   from '@/pages/athletes/AthleteMessagesPage'
 
 function LoadingScreen({ message = 'Loading SPPS…' }: { message?: string }) {
   return (
