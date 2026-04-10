@@ -24,6 +24,10 @@ import {
   InterventionsPage, AIAssistantPage, ReportsPage, SettingsPage,
 } from '@/pages/AppPages'
 
+import AcceptInvitePage      from '@/pages/athlete/AcceptInvitePage'
+import AthleteDashboard      from '@/pages/athlete/AthleteDashboard'
+import AthleteMessagesPage   from '@/pages/athlete/AthleteMessagesPage'
+
 function LoadingScreen({ message = 'Loading SPPS…' }: { message?: string }) {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 gap-4">
@@ -45,6 +49,8 @@ function RequireAuth() {
   if (profileLoading) return <LoadingScreen message="Loading your profile…" />
   // After loading: if still null, recovery also failed → send to login
   if (practitioner === null) return <Navigate to="/auth/login" state={{ from: location }} replace />
+  // Athletes have their own portal — never let them into the practitioner shell
+  if (user.user_metadata?.role === 'athlete') return <Navigate to="/athlete/dashboard" replace />
   if (!practitioner.compliance_completed) return <Navigate to="/compliance/hipaa" replace />
   return <Outlet />
 }
@@ -74,6 +80,8 @@ function RedirectIfAuth({ children }: { children: React.ReactNode }) {
   const { user, loading, practitioner, profileLoading } = useAuth()
   if (loading) return <LoadingScreen />
   if (user) {
+    // Athletes go directly to their portal — no compliance flow
+    if (user.user_metadata?.role === 'athlete') return <Navigate to="/athlete/dashboard" replace />
     if (profileLoading) return <LoadingScreen />
     // If practitioner still null after load — recovery failed; show auth pages
     if (practitioner === null) return <>{children}</>
@@ -84,10 +92,25 @@ function RedirectIfAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+
+// ── Athlete auth guard ──────────────────────────────────────────
+// Only athletes (role === 'athlete') can access /athlete/* routes.
+// Practitioners who accidentally hit these routes go to /dashboard.
+function RequireAthlete() {
+  const { user, loading } = useAuth()
+  const location = useLocation()
+  if (loading) return <LoadingScreen message="Loading Athlete Portal…" />
+  if (!user) return <Navigate to="/auth/login" state={{ from: location }} replace />
+  if (user.user_metadata?.role !== 'athlete') return <Navigate to="/dashboard" replace />
+  return <Outlet />
+}
+
 const router = createBrowserRouter([
   { path: '/', element: <LandingPage /> },
   { path: '/auth/login',  element: <RedirectIfAuth><LoginPage  /></RedirectIfAuth> },
   { path: '/auth/signup', element: <RedirectIfAuth><SignupPage /></RedirectIfAuth> },
+  // Athlete invite acceptance — fully public, no auth required
+  { path: '/athlete/accept-invite', element: <AcceptInvitePage /> },
   {
     path: '/compliance',
     element: <ComplianceGuard />,
@@ -126,6 +149,15 @@ const router = createBrowserRouter([
       { path: '/ai-assistant',             element: <AIAssistantPage /> },
       { path: '/reports',                  element: <ReportsPage /> },
       { path: '/settings',                 element: <SettingsPage /> },
+    ],
+  },
+  // ── Protected athlete routes ─────────────────────────────────────
+  {
+    element: <RequireAthlete />,
+    children: [
+      { path: '/athlete/dashboard', element: <AthleteDashboard /> },
+      { path: '/athlete/messages',  element: <AthleteMessagesPage /> },
+      { path: '/athlete/ai-chat',   element: <AthleteMessagesPage /> },
     ],
   },
   { path: '*', element: <NotFoundPage /> },

@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from '@/contexts/AuthContext'
+import { AthleteProvider } from '@/contexts/AthleteContext'
 import { LanguageProvider } from '@/contexts/LanguageContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import ErrorBoundary from '@/components/ErrorBoundary'
@@ -26,7 +27,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <QueryClientProvider client={queryClient}>
           <LanguageProvider>
             <AuthProvider>
-              <AppRouter />
+              <AthleteProvider>
+                <AppRouter />
+              </AthleteProvider>
             </AuthProvider>
           </LanguageProvider>
         </QueryClientProvider>

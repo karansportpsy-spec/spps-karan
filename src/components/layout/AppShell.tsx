@@ -4,8 +4,10 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Calendar, Activity, ClipboardList,
   Lightbulb, Bot, FileText, Settings, LogOut, Menu, Brain, Heart, Globe, Shield, FlaskConical,
+  MessageCircle, X, Star, Send, CheckCircle,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { supabase } from '@/lib/supabase'
 import { useLanguage } from '@/contexts/LanguageContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { Avatar } from '@/components/ui'
@@ -230,6 +232,188 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Floating theme switcher */}
       <ThemePanel />
+
+      {/* Floating feedback button */}
+      <FeedbackButton practitioner={practitioner} />
     </div>
+  )
+}
+
+// ── Floating Feedback Widget ──────────────────────────────────────────────────
+
+const FEEDBACK_CATEGORIES = [
+  { value: 'bug',        label: 'Bug Report',        emoji: '🐛' },
+  { value: 'feature',    label: 'Feature Request',   emoji: '💡' },
+  { value: 'usability',  label: 'Usability Issue',   emoji: '🧭' },
+  { value: 'praise',     label: 'Something I Like',  emoji: '❤️' },
+  { value: 'other',      label: 'Other Feedback',    emoji: '💬' },
+]
+
+function FeedbackButton({ practitioner }: { practitioner: any }) {
+  const [open, setOpen] = useState(false)
+  const [category, setCategory] = useState('')
+  const [rating, setRating] = useState(0)
+  const [hoverRating, setHoverRating] = useState(0)
+  const [message, setMessage] = useState('')
+  const [page, setPage] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
+
+  function reset() {
+    setCategory('')
+    setRating(0)
+    setHoverRating(0)
+    setMessage('')
+    setPage('')
+    setSent(false)
+  }
+
+  async function handleSubmit() {
+    if (!message.trim()) return
+    setSending(true)
+    try {
+      await supabase.from('feedback').insert({
+        practitioner_id: practitioner?.id ?? null,
+        practitioner_email: practitioner?.email ?? 'anonymous',
+        category: category || 'other',
+        rating,
+        message: message.trim(),
+        page_context: page || window.location.pathname,
+        user_agent: navigator.userAgent,
+      })
+      setSent(true)
+      setTimeout(() => {
+        setOpen(false)
+        reset()
+      }, 2000)
+    } catch (err) {
+      console.error('[SPPS Feedback] Failed:', err)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <>
+      {/* Floating button — bottom-right, above ThemePanel */}
+      <button
+        onClick={() => { setOpen(true); setPage(window.location.pathname) }}
+        className="fixed bottom-20 right-5 z-40 w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 active:scale-95"
+        style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
+        title="Send Feedback"
+      >
+        <MessageCircle size={20} className="text-white" />
+      </button>
+
+      {/* Feedback modal */}
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => { setOpen(false); reset() }} />
+
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in slide-in-from-bottom-4">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pt-5 pb-3">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Share Feedback</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Help us improve WinMindPerform SPPS</p>
+              </div>
+              <button onClick={() => { setOpen(false); reset() }}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition">
+                <X size={18} />
+              </button>
+            </div>
+
+            {sent ? (
+              <div className="flex flex-col items-center py-10 px-6 text-center">
+                <div className="w-14 h-14 rounded-full bg-green-50 flex items-center justify-center mb-4">
+                  <CheckCircle size={28} className="text-green-500" />
+                </div>
+                <p className="text-lg font-bold text-gray-900">Thank you!</p>
+                <p className="text-sm text-gray-500 mt-1">Your feedback helps shape the future of SPPS.</p>
+              </div>
+            ) : (
+              <div className="px-5 pb-5 space-y-4">
+                {/* Category pills */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">What's this about?</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {FEEDBACK_CATEGORIES.map(c => (
+                      <button key={c.value}
+                        onClick={() => setCategory(c.value)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border-2 transition-all ${
+                          category === c.value
+                            ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                            : 'border-gray-100 text-gray-600 hover:border-gray-200'
+                        }`}
+                      >
+                        <span>{c.emoji}</span> {c.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Star rating */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Overall experience</p>
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map(s => (
+                      <button key={s}
+                        onClick={() => setRating(s)}
+                        onMouseEnter={() => setHoverRating(s)}
+                        onMouseLeave={() => setHoverRating(0)}
+                        className="p-0.5 transition-transform hover:scale-110"
+                      >
+                        <Star size={24}
+                          fill={(hoverRating || rating) >= s ? '#f59e0b' : 'none'}
+                          stroke={(hoverRating || rating) >= s ? '#f59e0b' : '#d1d5db'}
+                          strokeWidth={1.5}
+                        />
+                      </button>
+                    ))}
+                    {rating > 0 && (
+                      <span className="ml-2 text-xs text-gray-400 self-center">
+                        {['', 'Needs work', 'Below average', 'Good', 'Very good', 'Excellent'][rating]}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Message */}
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Your feedback *</p>
+                  <textarea
+                    value={message}
+                    onChange={e => setMessage(e.target.value)}
+                    rows={3}
+                    placeholder="What's working well? What could be better? Any feature you'd love to see?"
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
+                  />
+                </div>
+
+                {/* Current page context */}
+                <div className="flex items-center gap-2 text-xs text-gray-400">
+                  <span>Page:</span>
+                  <code className="bg-gray-50 px-2 py-0.5 rounded text-gray-500">{page || window.location.pathname}</code>
+                </div>
+
+                {/* Submit */}
+                <button
+                  onClick={handleSubmit}
+                  disabled={!message.trim() || sending}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition-all"
+                  style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
+                >
+                  {sending ? 'Sending…' : <><Send size={14} /> Submit Feedback</>}
+                </button>
+
+                <p className="text-center text-xs text-gray-300">
+                  Feedback is stored securely and only visible to the SPPS team.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   )
 }

@@ -8,7 +8,7 @@ import { PageHeader, Button, Card, Badge, Avatar, Modal, Select, Spinner, EmptyS
 import { useAssessments, useCreateAssessment } from '@/hooks/useData'
 import { useAthletes } from '@/hooks/useAthletes'
 import { fmtDate } from '@/lib/utils'
-import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, Legend } from 'recharts'
+import { RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line, Legend } from 'recharts'
 import { INSTRUMENTS, scoreAssessment, type AssessmentInstrument } from '@/lib/assessmentInstruments'
 import type { AssessmentTool } from '@/types'
 import OfflineAssessmentModal from '@/components/OfflineAssessmentModal'   // ← NEW
@@ -433,6 +433,7 @@ export default function AssessmentsPage() {
                               <ResponsiveContainer width="100%" height={160}>
                                 <RadarChart data={radarData}>
                                   <PolarGrid />
+                                  <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
                                   <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9 }} />
                                   <Radar dataKey="value" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.2} />
                                   <Tooltip />
@@ -655,6 +656,7 @@ export default function AssessmentsPage() {
               <ResponsiveContainer width="100%" height={220}>
                 <RadarChart data={radarData}>
                   <PolarGrid />
+                                  <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
                   <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11 }} />
                   <Radar dataKey="value" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} />
                   <Tooltip formatter={(v: number) => [v, 'Score']} />
@@ -739,6 +741,7 @@ function PerformanceProfilingSection({ athletes, profiles, filterAthleteId, onFi
                 <ResponsiveContainer width="100%" height={140}>
                   <RadarChart data={radarData} margin={{ top: 5, right: 15, bottom: 5, left: 15 }}>
                     <PolarGrid stroke="#e5e7eb" />
+                    <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
                     <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9, fill: '#6b7280' }} />
                     <Radar dataKey="value" stroke={domain.accent} fill={domain.accent} fillOpacity={0.25} strokeWidth={2} />
                     <Tooltip formatter={(v: number) => [v + '/10', 'Score']} />
@@ -882,6 +885,7 @@ function ProfileEntryModal({ domain, domains, athletes, athleteId, scores, notes
               <ResponsiveContainer width="100%" height={220}>
                 <RadarChart data={radarData} margin={{ top: 10, right: 20, bottom: 10, left: 20 }}>
                   <PolarGrid stroke="#e5e7eb" />
+                    <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
                   <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10, fill: '#6b7280' }} />
                   <Radar dataKey="value" stroke={domain.accent} fill={domain.accent} fillOpacity={0.3} strokeWidth={2} />
                   <Tooltip formatter={(v: number) => [v + '/10', 'Score']} />
