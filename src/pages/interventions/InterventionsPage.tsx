@@ -639,7 +639,7 @@ function ProtocolBuilder({ athletes, initialFramework, onCreate, onCancel }: {
         ...sessions.map((s, i) => (i + 1) + '. ' + s),
         notes ? '\nNOTES:\n' + notes : '',
       ].filter(Boolean).join('\n')
-      await onCreate({ athlete_id: athleteId, category: fw.category, title, description: fw.theory.slice(0, 200), protocol, rating: 0, notes })
+      await onCreate({ athlete_id: athleteId, category: fw.category, title, description: fw.theory.slice(0, 200), protocol, rating: null, notes })
     } catch (err: any) {
       setSaveError('Save failed: ' + (err?.message ?? 'unknown error')); setSaving(false)
     }
@@ -771,26 +771,27 @@ export default function InterventionsPage() {
   const [saveError, setSaveError] = useState('')
   const [form, setForm] = useState({
     athlete_id: '', category: 'Cognitive Restructuring' as InterventionCategory,
-    title: '', description: '', protocol: '', rating: 0, notes: '',
+    title: '', description: '', protocol: '', rating: null, notes: '',
   })
 
   function openCreate() {
     setEditing(null)
-    setForm({ athlete_id: '', category: 'Cognitive Restructuring', title: '', description: '', protocol: '', rating: 0, notes: '' })
+    setForm({ athlete_id: '', category: 'Cognitive Restructuring', title: '', description: '', protocol: '', rating: null, notes: '' })
     setModalOpen(true)
   }
   function openEdit(i: Intervention) {
     setEditing(i)
-    setForm({ athlete_id: i.athlete_id, category: i.category, title: i.title, description: i.description ?? '', protocol: i.protocol ?? '', rating: i.rating ?? 0, notes: i.notes ?? '' })
+    setForm({ athlete_id: i.athlete_id, category: i.category, title: i.title, description: i.description ?? '', protocol: i.protocol ?? '', rating: i.rating || null, notes: i.notes ?? '' })
     setModalOpen(true)
   }
   function set(k: string) { return (e: React.ChangeEvent<any>) => setForm(f => ({ ...f, [k]: e.target.value })) }
 
   async function handleSave() {
     setSaving(true); setSaveError('')
+    const payload = { ...form, rating: form.rating || null }
     try {
-      if (editing) await updateIntervention.mutateAsync({ id: editing.id, ...form })
-      else await createIntervention.mutateAsync(form)
+      if (editing) await updateIntervention.mutateAsync({ id: editing.id, ...payload })
+      else await createIntervention.mutateAsync(payload)
       setModalOpen(false)
     } catch (err: any) {
       setSaveError('Save failed: ' + (err?.message ?? 'unknown error'))
@@ -972,7 +973,7 @@ export default function InterventionsPage() {
           <Textarea label="Clinical Notes" value={form.notes} onChange={set('notes') as any} rows={2} />
           <div>
             <p className="text-sm font-medium text-gray-700 mb-1">Effectiveness Rating</p>
-            <StarRating value={form.rating} onChange={v => setForm(f => ({ ...f, rating: v }))} />
+            <StarRating value={form.rating ?? 0} onChange={v => setForm(f => ({ ...f, rating: v }))} />
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => { setModalOpen(false); setSaveError('') }}>Cancel</Button>
