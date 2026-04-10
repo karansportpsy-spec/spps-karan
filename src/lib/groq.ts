@@ -53,3 +53,44 @@ export async function callGroq(opts: GroqOptions): Promise<string> {
   const data = await response.json()
   return data.choices?.[0]?.message?.content ?? ''
 }
+
+// ── Audio transcription via Groq Whisper ──────────────────────────────────────
+
+const GROQ_TRANSCRIPTION_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
+
+export interface TranscribeOptions {
+  file: File
+  language?: string        // ISO 639-1 code (e.g. 'en', 'hi', 'ta')
+  prompt?: string          // Optional context to guide transcription
+}
+
+export async function transcribeAudio(opts: TranscribeOptions): Promise<string> {
+  if (!GROQ_KEY) {
+    throw new Error('Audio transcription requires VITE_GROQ_API_KEY in your environment variables.')
+  }
+
+  if (opts.file.size > 25 * 1024 * 1024) {
+    throw new Error('Audio file must be under 25 MB. Please trim or compress the recording.')
+  }
+
+  const formData = new FormData()
+  formData.append('file', opts.file)
+  formData.append('model', 'whisper-large-v3-turbo')
+  formData.append('response_format', 'verbose_json')
+  if (opts.language) formData.append('language', opts.language)
+  if (opts.prompt) formData.append('prompt', opts.prompt)
+
+  const response = await fetch(GROQ_TRANSCRIPTION_URL, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${GROQ_KEY}` },
+    body: formData,
+  })
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(err?.error?.message ?? `Transcription failed (${response.status})`)
+  }
+
+  const data = await response.json()
+  return data.text ?? ''
+}
