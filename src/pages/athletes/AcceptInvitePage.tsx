@@ -50,7 +50,11 @@ export default function AcceptInvitePage() {
     setSaving(true)
 
     try {
-      // 1. Sign up with Supabase Auth (athlete role in metadata)
+      // 1. Sign up — pass athlete context in user_metadata so the DB trigger
+      //    (handle_new_user) can create the athlete_profiles row server-side.
+      //    We NEVER do a client-side insert into athlete_profiles here because
+      //    when email confirmation is enabled auth.uid() is null at this point
+      //    and the foreign key REFERENCES auth.users(id) would fail.
       const { data: auth, error: signUpErr } = await supabase.auth.signUp({
         email: emailParam || invite.email,
         password,
@@ -68,26 +72,22 @@ export default function AcceptInvitePage() {
       if (signUpErr) throw signUpErr
       if (!auth.user) throw new Error('Account creation failed')
 
-      // 2. Create athlete_profiles row
-      const { error: profileErr } = await supabase.from('athlete_profiles').upsert({
-        id: auth.user.id,
-        practitioner_id: invite.practitioner_id,
-        athlete_id: invite.athlete_id,
-        email: emailParam || invite.email,
-        display_name: invite.athlete ? `${invite.athlete.first_name} ${invite.athlete.last_name}` : null,
-        portal_enabled: true,
-        portal_enabled_at: new Date().toISOString(),
-      }, { onConflict: 'id' })
-
-      if (profileErr) throw profileErr
-
-      // 3. Mark invite as accepted
+      // 2. Mark invite as accepted — token is the credential here,
+      //    no auth.uid() needed for this update.
       await supabase.from('athlete_invites')
         .update({ accepted_at: new Date().toISOString() })
         .eq('token', token)
 
-      setStep('done')
-      setTimeout(() => navigate('/athlete/dashboard', { replace: true }), 2000)
+      // 3. Route based on whether email confirmation is required.
+      //    auth.session is non-null only when confirmation is disabled.
+      if (auth.session) {
+        // No email confirmation — go straight to dashboard
+        setStep('done')
+        setTimeout(() => navigate('/athlete/dashboard', { replace: true }), 1500)
+      } else {
+        // Email confirmation required — show check-email message
+        setStep('done')
+      }
 
     } catch (e: any) {
       setError(e.message ?? 'Something went wrong. Please try again.')
@@ -132,8 +132,13 @@ export default function AcceptInvitePage() {
                 <CheckCircle size={28} className="text-green-500" />
               </div>
               <h2 className="font-bold text-gray-900">Welcome to SPPS!</h2>
-              <p className="text-sm text-gray-500">Your account is set up. Taking you to your dashboard…</p>
-              <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="text-sm text-gray-500">
+                Your account is ready. Check your email for a confirmation link, then sign in to access your portal.
+              </p>
+              <button onClick={() => navigate('/auth/login', { replace: true })}
+                className="mt-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm transition-colors">
+                Go to Sign In
+              </button>
             </div>
           )}
 
