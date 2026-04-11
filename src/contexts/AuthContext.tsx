@@ -122,7 +122,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(session?.user ?? null)
 
         if (session?.user) {
-          await loadProfile(session.user.id)
+          // Athletes don't have a practitioners row — skip profile loading
+          const role = session.user.user_metadata?.role
+          if (role !== 'athlete') {
+            await loadProfile(session.user.id)
+          }
         }
 
         if (mounted) setLoading(false)
@@ -148,19 +152,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event === 'SIGNED_IN') {
         setSession(session)
         setUser(session?.user ?? null)
-        // Only fetch profile if we don't already have one.
-        // SIGNED_IN fires on every tab-focus — re-fetching each time
-        // causes the spinner to appear on every switch.
-        if (session?.user) {
+        // Athletes don't have a practitioners row — skip
+        if (session?.user && session.user.user_metadata?.role !== 'athlete') {
           setPractitioner(prev => {
-            if (prev === null) loadProfile(session.user!.id)  // genuine new sign-in
-            return prev                                        // already loaded — keep it
+            if (prev === null) loadProfile(session.user!.id)
+            return prev
           })
         }
         return
       }
 
-      if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+      const eventType = event as string
+      if (eventType === 'SIGNED_OUT' || eventType === 'USER_DELETED') {
         setSession(null)
         setUser(null)
         setPractitioner(null)
@@ -196,7 +199,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthError(m)
       throw new Error(m)
     }
-    if (data.user) await loadProfile(data.user.id)
+    if (data.user) {
+      if (data.user.user_metadata?.role !== 'athlete') {
+        await loadProfile(data.user.id)
+      }
+    }
   }
 
   // ── Sign Up ─────────────────────────────────────────────────────────────────
