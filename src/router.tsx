@@ -28,6 +28,7 @@ import {
 import AcceptInvitePage      from '@/pages/athletes/AcceptInvitePage'
 import AthleteDashboard      from '@/pages/athletes/AthleteDashboard'
 import AthleteMessagesPage   from '@/pages/athletes/AthleteMessagesPage'
+import AthleteProgramPage    from '@/pages/athletes/AthleteProgramPage'
 
 function LoadingScreen({ message = 'Loading SPPS…' }: { message?: string }) {
   return (
@@ -155,6 +156,7 @@ const router = createBrowserRouter([
     element: <RequireAthlete />,
     children: [
       { path: '/athlete/dashboard', element: <AthleteDashboard /> },
+      { path: '/athlete/programs/:programId', element: <AthleteProgramPage /> },
       { path: '/athlete/messages',  element: <AthleteMessagesPage /> },
       { path: '/athlete/ai-chat',   element: <AthleteMessagesPage /> },
     ],
