@@ -19,6 +19,7 @@ import CustomAssessmentPage  from '@/pages/assessments/CustomAssessmentPage'
 import ConsentFormsPage      from '@/pages/consent/ConsentFormsPage'
 import InjuryPsychologyPage  from '@/pages/injury/InjuryPsychologyPage'
 import MentalPerformanceLabPage from '@/pages/lab/MentalPerformanceLabPage'
+import ProgramBuilderPage from '@/pages/program builder/ProgramBuilderPage'
 import {
   SessionsPage, CheckInsPage, AssessmentsPage,
   InterventionsPage, AIAssistantPage, ReportsPage, SettingsPage,
@@ -140,6 +141,7 @@ const router = createBrowserRouter([
       { path: '/assessments/neuro',        element: <NeurocognitivePage /> },
       { path: '/assessments/custom',       element: <CustomAssessmentPage /> },
       { path: '/interventions',            element: <InterventionsPage /> },
+      { path: '/programs',                 element: <ProgramBuilderPage /> },
       { path: '/consent',                  element: <ConsentFormsPage /> },
       { path: '/injury',                   element: <InjuryPsychologyPage /> },
       { path: '/lab',                      element: <MentalPerformanceLabPage /> },
