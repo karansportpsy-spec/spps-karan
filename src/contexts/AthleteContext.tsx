@@ -169,6 +169,8 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
     },
   })
 
+  const athleteProfileValue = athleteProfile ?? null
+
   // Load the linked athlete record (for check-ins, sessions, etc.)
   const { data: athleteRecord } = useQuery({
     queryKey: ['athlete_record', athleteProfile?.athlete_id],
@@ -219,7 +221,7 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
   })
 
   // Load conversation with practitioner
-  const { data: conversation } = useQuery<Conversation | null>({
+  const { data: conversationData } = useQuery<Conversation | null>({
     queryKey: ['athlete_conversation', athleteProfile?.athlete_id, athleteProfile?.practitioner_id],
     enabled: !!athleteProfile,
     queryFn: async () => {
@@ -233,6 +235,8 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
       return data as Conversation | null
     },
   })
+
+  const conversation = conversationData ?? null
 
   // Realtime: subscribe to new notifications
   useEffect(() => {
@@ -381,7 +385,7 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
   const unreadCount = notifications.filter(n => !n.is_read).length
 
   const value: AthleteContextValue = {
-    athleteProfile,
+    athleteProfile: athleteProfile ?? null,
     athleteRecord,
     programs,
     notifications,

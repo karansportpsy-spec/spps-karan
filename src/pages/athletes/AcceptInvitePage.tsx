@@ -68,26 +68,22 @@ export default function AcceptInvitePage() {
       if (signUpErr) throw signUpErr
       if (!auth.user) throw new Error('Account creation failed')
 
-      // 2. Create athlete_profiles row
-      const { error: profileErr } = await supabase.from('athlete_profiles').upsert({
-        id: auth.user.id,
-        practitioner_id: invite.practitioner_id,
-        athlete_id: invite.athlete_id,
-        email: emailParam || invite.email,
-        display_name: invite.athlete ? `${invite.athlete.first_name} ${invite.athlete.last_name}` : null,
-        portal_enabled: true,
-        portal_enabled_at: new Date().toISOString(),
-      }, { onConflict: 'id' })
-
-      if (profileErr) throw profileErr
+      // 2. The DB trigger (handle_new_athlete) creates the athlete_profiles
+      //    row server-side. No client-side insert needed.
 
       // 3. Mark invite as accepted
       await supabase.from('athlete_invites')
         .update({ accepted_at: new Date().toISOString() })
         .eq('token', token)
 
-      setStep('done')
-      setTimeout(() => navigate('/athlete/dashboard', { replace: true }), 2000)
+      // 4. If session exists (email confirmation disabled), go to dashboard
+      if (auth.session) {
+        setStep('done')
+        setTimeout(() => navigate('/athlete/dashboard', { replace: true }), 2000)
+      } else {
+        // Email confirmation required
+        setStep('done')
+      }
 
     } catch (e: any) {
       setError(e.message ?? 'Something went wrong. Please try again.')

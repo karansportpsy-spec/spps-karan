@@ -4,7 +4,7 @@ import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Calendar, Activity, ClipboardList,
   Lightbulb, Bot, FileText, Settings, LogOut, Menu, Brain, Heart, Globe, Shield, FlaskConical,
-  MessageCircle, X, Star, Send, CheckCircle,
+  MessageCircle, X, Star, Send, CheckCircle, Layers,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -37,6 +37,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     { label: t.nav_psychophysiology,  href: '/assessments/physio',  Icon: Activity },
     { label: t.nav_neurocognitive,    href: '/assessments/neuro',   Icon: Brain },
     { label: t.nav_interventions,     href: '/interventions',       Icon: Lightbulb },
+    { label: 'Athlete Programs',       href: '/programs',            Icon: Layers },
     { label: 'Consent Forms',          href: '/consent',             Icon: Shield },
     { label: 'Injury Psychology',      href: '/injury',              Icon: Activity },
     { label: 'Mental Performance Lab', href: '/lab',                Icon: FlaskConical },

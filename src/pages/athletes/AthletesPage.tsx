@@ -11,6 +11,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useLanguage } from '@/contexts/LanguageContext'
 import type { Athlete, RiskLevel, AthleteStatus } from '@/types'
 import AthleteImportModal from '@/components/AthleteImportModal'
+import EnableAthletePortal from '@/components/EnableAthletePortal'
 import { generateAthleteUID, needsUID } from '@/lib/athleteUID'
 
 const BLANK: Omit<Athlete, 'id' | 'practitioner_id' | 'created_at' | 'updated_at'> = {
@@ -465,6 +466,17 @@ export default function AthletesPage() {
               className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+
+          {/* Athlete Portal — only when editing an existing athlete */}
+          {editing && (
+            <div className="border-t pt-3">
+              <EnableAthletePortal
+                athleteId={editing.id}
+                athleteFirstName={editing.first_name}
+                athleteEmail={editing.email}
+              />
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => setModalOpen(false)}>{t.cancel}</Button>
             <Button onClick={handleSave} loading={saving}>{t.save} Athlete</Button>
