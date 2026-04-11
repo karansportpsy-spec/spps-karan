@@ -45,12 +45,12 @@ function RequireAuth() {
   const location = useLocation()
   if (loading) return <LoadingScreen />
   if (!user) return <Navigate to="/auth/login" state={{ from: location }} replace />
+  // Athletes have their own portal — never let them into the practitioner shell
+  if (user.user_metadata?.role === 'athlete') return <Navigate to="/athlete/dashboard" replace />
   // Spinner only while actively loading — never block forever
   if (profileLoading) return <LoadingScreen message="Loading your profile…" />
   // After loading: if still null, recovery also failed → send to login
   if (practitioner === null) return <Navigate to="/auth/login" state={{ from: location }} replace />
-  // Athletes have their own portal — never let them into the practitioner shell
-  if (user.user_metadata?.role === 'athlete') return <Navigate to="/athlete/dashboard" replace />
   if (!practitioner.compliance_completed) return <Navigate to="/compliance/hipaa" replace />
   return <Outlet />
 }
@@ -92,10 +92,7 @@ function RedirectIfAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-
 // ── Athlete auth guard ──────────────────────────────────────────
-// Only athletes (role === 'athlete') can access /athlete/* routes.
-// Practitioners who accidentally hit these routes go to /dashboard.
 function RequireAthlete() {
   const { user, loading } = useAuth()
   const location = useLocation()
@@ -109,7 +106,7 @@ const router = createBrowserRouter([
   { path: '/', element: <LandingPage /> },
   { path: '/auth/login',  element: <RedirectIfAuth><LoginPage  /></RedirectIfAuth> },
   { path: '/auth/signup', element: <RedirectIfAuth><SignupPage /></RedirectIfAuth> },
-  // Athlete invite acceptance — fully public, no auth required
+  // Athlete invite acceptance — public, no auth required
   { path: '/athlete/accept-invite', element: <AcceptInvitePage /> },
   {
     path: '/compliance',
