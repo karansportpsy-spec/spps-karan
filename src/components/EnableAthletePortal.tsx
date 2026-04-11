@@ -70,7 +70,16 @@ export default function EnableAthletePortal({ athleteId, athleteFirstName, athle
 
       if (inviteErr) throw inviteErr
 
-      // Build invite URL (in production this would send an email via Edge Function)
+      // Auto-create conversation so practitioner can message first
+      await supabase.from('conversations').upsert({
+        practitioner_id: user.id,
+        athlete_id: athleteId,
+        status: 'active',
+        practitioner_unread: 0,
+        athlete_unread: 0,
+      }, { onConflict: 'practitioner_id,athlete_id' }).catch(() => {})
+
+      // Build invite URL
       const baseUrl = window.location.origin
       const link = `${baseUrl}/athlete/accept-invite?token=${invite.token}&email=${encodeURIComponent(email.trim())}`
       setInviteLink(link)
