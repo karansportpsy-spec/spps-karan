@@ -7,7 +7,6 @@ import { LanguageProvider } from '@/contexts/LanguageContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import AppRouter from '@/router'
-// @ts-ignore: allow CSS side-effect import without type declarations
 import './index.css'
 
 const queryClient = new QueryClient({
