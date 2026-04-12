@@ -70,11 +70,8 @@ export default function EnableAthletePortal({ athleteId, athleteFirstName, athle
 
       if (inviteErr) throw inviteErr
 
-<<<<<<< HEAD
-      // Build invite URL (in production this would send an email via Edge Function)
-=======
       // Auto-create conversation so practitioner can message first
-      await supabase.from('conversations').upsert({
+      await supabase.from('conversation').upsert({
         practitioner_id: user.id,
         athlete_id: athleteId,
         status: 'active',
@@ -83,7 +80,6 @@ export default function EnableAthletePortal({ athleteId, athleteFirstName, athle
       }, { onConflict: 'practitioner_id,athlete_id' }).catch(() => {})
 
       // Build invite URL
->>>>>>> d1154bf2ef0193a2bc08f4c616eefc6044e57983
       const baseUrl = window.location.origin
       const link = `${baseUrl}/athlete/accept-invite?token=${invite.token}&email=${encodeURIComponent(email.trim())}`
       setInviteLink(link)
@@ -97,7 +93,7 @@ export default function EnableAthletePortal({ athleteId, athleteFirstName, athle
   })
 
   async function copyLink() {
-    await navigator.clipboard.writeText(inviteLink || `${window.location.origin}/athlete/accept-invite?token=${pendingInvite?.token}`)
+    await navigator.clipboard.writeText(inviteLink || `${window.location.origin}/athletes/accept-invite?token=${pendingInvite?.token}`)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -129,7 +125,7 @@ export default function EnableAthletePortal({ athleteId, athleteFirstName, athle
   if (pendingInvite && !inviteLink) {
     const expiresAt = new Date(pendingInvite.expires_at)
     const hoursLeft = Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60))
-    const link = `${window.location.origin}/athlete/accept-invite?token=${pendingInvite.token}&email=${encodeURIComponent(pendingInvite.email)}`
+    const link = `${window.location.origin}/athletes/accept-invite?token=${pendingInvite.token}&email=${encodeURIComponent(pendingInvite.email)}`
 
     return (
       <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
