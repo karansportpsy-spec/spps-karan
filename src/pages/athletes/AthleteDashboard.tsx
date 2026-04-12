@@ -1,4 +1,4 @@
-// src/pages/athlete/AthleteDashboard.tsx
+// src/pages/athletes/AthleteDashboard.tsx
 // The athlete's home screen — tasks, messages, next session, progress, programs
 
 import { useState } from 'react'
@@ -8,18 +8,12 @@ import {
   CheckCircle, MessageSquare, Calendar, TrendingUp, Bell,
   ChevronRight, Clock, Zap, Award, Target, Play, BookOpen,
   Mic, Video, AlignLeft, Star, BarChart2, LogOut, X, LayoutDashboard,
-<<<<<<< HEAD
-=======
   Heart, Smile,
->>>>>>> d1154bf2ef0193a2bc08f4c616eefc6044e57983
 } from 'lucide-react'
 import { useAthlete } from '@/contexts/AthleteContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
-<<<<<<< HEAD
-=======
 import { useQueryClient } from '@tanstack/react-query'
->>>>>>> d1154bf2ef0193a2bc08f4c616eefc6044e57983
 
 // ── Task type icons ────────────────────────────────────────────────────────────
 const TASK_ICONS: Record<string, React.ElementType> = {
@@ -44,8 +38,6 @@ const TASK_COLORS: Record<string, { bg: string; icon: string; border: string }> 
   check_in:    { bg: 'bg-green-50',  icon: 'text-green-500',  border: 'border-green-200' },
 }
 
-<<<<<<< HEAD
-=======
 // ── Daily Check-In Card ──────────────────────────────────────────────────────
 
 const CHECKIN_FIELDS = [
@@ -197,7 +189,6 @@ function DailyCheckInCard({ athleteId, practitionerId }: { athleteId: string; pr
   )
 }
 
->>>>>>> d1154bf2ef0193a2bc08f4c616eefc6044e57983
 // ── Hooks ─────────────────────────────────────────────────────────────────────
 
 function useUpcomingSession(athleteId?: string) {
@@ -520,14 +511,39 @@ export default function AthleteDashboard() {
           ))}
         </div>
 
-<<<<<<< HEAD
-=======
-        {/* ── Daily Check-In ── */}
-        {athleteProfile?.athlete_id && athleteProfile?.practitioner_id && (
-          <DailyCheckInCard athleteId={athleteProfile.athlete_id} practitionerId={athleteProfile.practitioner_id} />
-        )}
+        {/* ── Daily Log + Quick Actions ── */}
+        <Link to="/athlete/daily-log"
+          className="block bg-gradient-to-r from-blue-500 to-blue-600 rounded-2xl p-4 text-white shadow-sm hover:shadow-md transition-all active:scale-[0.99]">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                <Smile size={22} />
+              </div>
+              <div>
+                <p className="font-bold text-sm">Daily Log</p>
+                <p className="text-xs text-blue-200">Wellbeing · Training · 5 C's · Nutrition</p>
+              </div>
+            </div>
+            <ChevronRight size={18} className="text-blue-200" />
+          </div>
+        </Link>
 
->>>>>>> d1154bf2ef0193a2bc08f4c616eefc6044e57983
+        {/* Quick access cards */}
+        <div className="grid grid-cols-3 gap-2">
+          <Link to="/athlete/journal" className="bg-white rounded-xl border border-gray-100 p-3 text-center hover:shadow-sm transition-all">
+            <span className="text-lg">📓</span>
+            <p className="text-xs font-semibold text-gray-700 mt-1">Journal</p>
+          </Link>
+          <Link to="/athlete/competitions" className="bg-white rounded-xl border border-gray-100 p-3 text-center hover:shadow-sm transition-all">
+            <span className="text-lg">🏆</span>
+            <p className="text-xs font-semibold text-gray-700 mt-1">Competitions</p>
+          </Link>
+          <Link to="/athlete/requests" className="bg-white rounded-xl border border-gray-100 p-3 text-center hover:shadow-sm transition-all">
+            <span className="text-lg">📅</span>
+            <p className="text-xs font-semibold text-gray-700 mt-1">Request Session</p>
+          </Link>
+        </div>
+
         {/* ── Today's Tasks ── */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
