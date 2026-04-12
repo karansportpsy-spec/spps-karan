@@ -1,4 +1,4 @@
-// src/pages/conversations/ConversationsPage.tsx
+// src/pages/conversation/ConversationsPage.tsx
 // Practitioner-side: view all athlete conversations, read and reply to messages
 
 import { useState, useEffect, useRef } from 'react'
