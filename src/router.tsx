@@ -19,7 +19,7 @@ import CustomAssessmentPage  from '@/pages/assessments/CustomAssessmentPage'
 import ConsentFormsPage      from '@/pages/consent/ConsentFormsPage'
 import InjuryPsychologyPage  from '@/pages/injury/InjuryPsychologyPage'
 import MentalPerformanceLabPage from '@/pages/lab/MentalPerformanceLabPage'
-import ProgramBuilderPage from '@/pages/programs/ProgramBuilderPage'
+import ProgramBuilderPage from '@/pages/program builder/ProgramBuilderPage'
 import {
   SessionsPage, CheckInsPage, AssessmentsPage,
   InterventionsPage, AIAssistantPage, ReportsPage, SettingsPage,
@@ -32,7 +32,7 @@ import AthleteProgramPage    from '@/pages/athletes/AthleteProgramPage'
 import AthleteProgramsListPage from '@/pages/athletes/AthleteProgramsListPage'
 import AthleteProgressPage   from '@/pages/athletes/AthleteProgressPage'
 
-import ConversationsPage     from '@/pages/conversations/ConversationsPage'
+import ConversationsPage     from '@/pages/conversation/ConversationsPage'
 
 function LoadingScreen({ message = 'Loading SPPS…' }: { message?: string }) {
   return (
