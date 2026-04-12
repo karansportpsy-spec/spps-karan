@@ -19,7 +19,7 @@ import CustomAssessmentPage  from '@/pages/assessments/CustomAssessmentPage'
 import ConsentFormsPage      from '@/pages/consent/ConsentFormsPage'
 import InjuryPsychologyPage  from '@/pages/injury/InjuryPsychologyPage'
 import MentalPerformanceLabPage from '@/pages/lab/MentalPerformanceLabPage'
-import ProgramBuilderPage from '@/pages/programs/ProgramBuilderPage'
+import ProgramBuilderPage from '@/pages/interventions/ProgramBuilderPage'
 import {
   SessionsPage, CheckInsPage, AssessmentsPage,
   InterventionsPage, AIAssistantPage, ReportsPage, SettingsPage,
@@ -150,7 +150,7 @@ const router = createBrowserRouter([
       { path: '/assessments/neuro',        element: <NeurocognitivePage /> },
       { path: '/assessments/custom',       element: <CustomAssessmentPage /> },
       { path: '/interventions',            element: <InterventionsPage /> },
-      { path: '/program builder',                 element: <ProgramBuilderPage /> },
+      { path: '/programs',                     element: <ProgramBuilderPage /> },
       { path: '/consent',                  element: <ConsentFormsPage /> },
       { path: '/injury',                   element: <InjuryPsychologyPage /> },
       { path: '/lab',                      element: <MentalPerformanceLabPage /> },
@@ -164,16 +164,16 @@ const router = createBrowserRouter([
   {
     element: <RequireAthlete />,
     children: [
-      { path: '/athletes/dashboard', element: <AthleteDashboard /> },
-      { path: '/athletes/daily-log', element: <AthleteDailyLogPage /> },
-      { path: '/athletes/programs',  element: <AthleteProgramsListPage /> },
-      { path: '/athletes/programs/:programId', element: <AthleteProgramPage /> },
-      { path: '/athletes/progress',  element: <AthleteProgressPage /> },
-      { path: '/athletes/messages',  element: <AthleteMessagesPage /> },
-      { path: '/athletes/ai-chat',   element: <AthleteMessagesPage /> },
-      { path: '/athletes/requests',  element: <AthleteRequestsPage /> },
-      { path: '/athletes/journal',   element: <AthleteJournalPage /> },
-      { path: '/athletes/competitions', element: <AthleteCompetitionPage /> },
+      { path: '/athlete/dashboard',              element: <AthleteDashboard /> },
+      { path: '/athlete/daily-log',              element: <AthleteDailyLogPage /> },
+      { path: '/athlete/programs',               element: <AthleteProgramsListPage /> },
+      { path: '/athlete/programs/:programId',    element: <AthleteProgramPage /> },
+      { path: '/athlete/progress',               element: <AthleteProgressPage /> },
+      { path: '/athlete/messages',               element: <AthleteMessagesPage /> },
+      { path: '/athlete/ai-chat',                element: <AthleteMessagesPage /> },
+      { path: '/athlete/requests',               element: <AthleteRequestsPage /> },
+      { path: '/athlete/journal',                element: <AthleteJournalPage /> },
+      { path: '/athlete/competitions',           element: <AthleteCompetitionPage /> },
     ],
   },
   { path: '*', element: <NotFoundPage /> },
