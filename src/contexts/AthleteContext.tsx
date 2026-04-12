@@ -1,11 +1,11 @@
-﻿// src/contexts/AthleteContext.tsx
+// src/contexts/AthleteContext.tsx
 // Provides athlete-side data: profile, programs, tasks, notifications, messages
-// Only active when user.user_metadata.role === ''athlete''
+// Only active when user.user_metadata.role === 'athlete'
 
-import { createContext, useContext, useEffect, useState, ReactNode } from ''react''
-import { useQuery, useMutation, useQueryClient } from ''@tanstack/react-query''
-import { supabase } from ''@/lib/supabase''
-import { useAuth } from ''@/contexts/AuthContext''
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/contexts/AuthContext'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -31,7 +31,7 @@ export interface AssignedProgram {
   practitioner_id: string
   start_date: string
   end_date?: string
-  status: ''pending'' | ''active'' | ''paused'' | ''completed'' | ''cancelled''
+  status: 'pending' | 'active' | 'paused' | 'completed' | 'cancelled'
   notes?: string
   assigned_at: string
   program: {
@@ -48,7 +48,7 @@ export interface ProgramTask {
   program_id: string
   title: string
   description?: string
-  task_type: ''exercise'' | ''journal'' | ''video_watch'' | ''audio_listen'' | ''breathing'' | ''reading'' | ''self_rating'' | ''check_in''
+  task_type: 'exercise' | 'journal' | 'video_watch' | 'audio_listen' | 'breathing' | 'reading' | 'self_rating' | 'check_in'
   content_url?: string
   content_text?: string
   week_number?: number
@@ -63,7 +63,7 @@ export interface TaskCompletion {
   task_id: string
   athlete_program_id: string
   athlete_id: string
-  status: ''pending'' | ''in_progress'' | ''completed'' | ''skipped''
+  status: 'pending' | 'in_progress' | 'completed' | 'skipped'
   completed_at?: string
   rating?: number
   feedback_text?: string
@@ -97,7 +97,7 @@ export interface Message {
   id: string
   conversation_id: string
   sender_id: string
-  sender_role: ''practitioner'' | ''athlete'' | ''ai_bot''
+  sender_role: 'practitioner' | 'athlete' | 'ai_bot'
   content: string
   content_type: string
   is_read: boolean
@@ -144,7 +144,7 @@ const AthleteContext = createContext<AthleteContextValue | null>(null)
 
 export function useAthlete() {
   const ctx = useContext(AthleteContext)
-  if (!ctx) throw new Error(''useAthlete must be used within AthleteProvider'')
+  if (!ctx) throw new Error('useAthlete must be used within AthleteProvider')
   return ctx
 }
 
@@ -156,13 +156,13 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
 
   // Load athlete profile (auth bridge row)
   const { data: athleteProfile, isLoading: loadingProfile } = useQuery<AthleteProfile | null>({
-    queryKey: [''athlete_profile'', user?.id],
-    enabled: !!user && user.user_metadata?.role === ''athlete'',
+    queryKey: ['athlete_profile', user?.id],
+    enabled: !!user && user.user_metadata?.role === 'athlete',
     queryFn: async () => {
       const { data, error } = await supabase
-        .from(''athlete_profiles'')
-        .select(''*'')
-        .eq(''id'', user!.id)
+        .from('athlete_profiles')
+        .select('*')
+        .eq('id', user!.id)
         .single()
       if (error) return null
       return data as AthleteProfile
@@ -171,13 +171,13 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
 
   // Load the linked athlete record (for check-ins, sessions, etc.)
   const { data: athleteRecord } = useQuery({
-    queryKey: [''athlete_record'', athleteProfile?.athlete_id],
+    queryKey: ['athlete_record', athleteProfile?.athlete_id],
     enabled: !!athleteProfile?.athlete_id,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from(''athletes'')
-        .select(''*'')
-        .eq(''id'', athleteProfile!.athlete_id)
+        .from('athletes')
+        .select('*')
+        .eq('id', athleteProfile!.athlete_id)
         .single()
       if (error) return null
       return data
@@ -186,16 +186,16 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
 
   // Load assigned programs
   const { data: programs = [], isLoading: loadingPrograms } = useQuery<AssignedProgram[]>({
-    queryKey: [''athlete_programs'', athleteProfile?.athlete_id],
+    queryKey: ['athlete_programs', athleteProfile?.athlete_id],
     enabled: !!athleteProfile?.athlete_id,
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from(''athlete_programs'')
+        .from('athlete_programs')
         .select(`*, program:intervention_programs(id,title,description,category,duration_weeks)`)
-        .eq(''athlete_id'', athleteProfile!.athlete_id)
-        .in(''status'', [''active'', ''pending''])
-        .order(''assigned_at'', { ascending: false })
+        .eq('athlete_id', athleteProfile!.athlete_id)
+        .in('status', ['active', 'pending'])
+        .order('assigned_at', { ascending: false })
       if (error) return []
       return (data ?? []) as AssignedProgram[]
     },
@@ -203,15 +203,15 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
 
   // Load notifications
   const { data: notifications = [] } = useQuery<AthleteNotification[]>({
-    queryKey: [''athlete_notifications'', athleteProfile?.athlete_id],
+    queryKey: ['athlete_notifications', athleteProfile?.athlete_id],
     enabled: !!athleteProfile?.athlete_id,
     staleTime: 0,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from(''athlete_notifications'')
-        .select(''*'')
-        .eq(''athlete_id'', athleteProfile!.athlete_id)
-        .order(''created_at'', { ascending: false })
+        .from('athlete_notifications')
+        .select('*')
+        .eq('athlete_id', athleteProfile!.athlete_id)
+        .order('created_at', { ascending: false })
         .limit(50)
       if (error) return []
       return (data ?? []) as AthleteNotification[]
@@ -220,14 +220,14 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
 
   // Load conversation with practitioner
   const { data: conversation } = useQuery<Conversation | null>({
-    queryKey: [''athlete_conversation'', athleteProfile?.athlete_id, athleteProfile?.practitioner_id],
+    queryKey: ['athlete_conversation', athleteProfile?.athlete_id, athleteProfile?.practitioner_id],
     enabled: !!athleteProfile,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from(''conversations'')
-        .select(''*'')
-        .eq(''athlete_id'', athleteProfile!.athlete_id)
-        .eq(''practitioner_id'', athleteProfile!.practitioner_id)
+        .from('conversations')
+        .select('*')
+        .eq('athlete_id', athleteProfile!.athlete_id)
+        .eq('practitioner_id', athleteProfile!.practitioner_id)
         .maybeSingle()
       if (error) return null
       return data as Conversation | null
@@ -239,13 +239,13 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
     if (!athleteProfile?.athlete_id) return
     const channel = supabase
       .channel(`notifications:${athleteProfile.athlete_id}`)
-      .on(''postgres_changes'', {
-        event: ''INSERT'',
-        schema: ''public'',
-        table: ''athlete_notifications'',
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'athlete_notifications',
         filter: `athlete_id=eq.${athleteProfile.athlete_id}`,
       }, () => {
-        qc.invalidateQueries({ queryKey: [''athlete_notifications''] })
+        qc.invalidateQueries({ queryKey: ['athlete_notifications'] })
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
@@ -256,14 +256,14 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
     if (!conversation?.id) return
     const channel = supabase
       .channel(`conversation:${conversation.id}`)
-      .on(''postgres_changes'', {
-        event: ''INSERT'',
-        schema: ''public'',
-        table: ''messages'',
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
         filter: `conversation_id=eq.${conversation.id}`,
       }, () => {
-        qc.invalidateQueries({ queryKey: [''messages'', conversation.id] })
-        qc.invalidateQueries({ queryKey: [''athlete_conversation''] })
+        qc.invalidateQueries({ queryKey: ['messages', conversation.id] })
+        qc.invalidateQueries({ queryKey: ['athlete_conversation'] })
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
@@ -271,29 +271,29 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
 
   // Update last_active_at
   useEffect(() => {
-    if (!user?.id || user.user_metadata?.role !== ''athlete'') return
-    supabase.from(''athlete_profiles'')
+    if (!user?.id || user.user_metadata?.role !== 'athlete') return
+    supabase.from('athlete_profiles')
       .update({ last_active_at: new Date().toISOString() })
-      .eq(''id'', user.id)
+      .eq('id', user.id)
       .then(() => {})
   }, [user?.id])
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
   function markNotificationRead(id: string) {
-    supabase.from(''athlete_notifications'')
+    supabase.from('athlete_notifications')
       .update({ is_read: true, read_at: new Date().toISOString() })
-      .eq(''id'', id)
-      .then(() => qc.invalidateQueries({ queryKey: [''athlete_notifications''] }))
+      .eq('id', id)
+      .then(() => qc.invalidateQueries({ queryKey: ['athlete_notifications'] }))
   }
 
   function markAllNotificationsRead() {
     if (!athleteProfile?.athlete_id) return
-    supabase.from(''athlete_notifications'')
+    supabase.from('athlete_notifications')
       .update({ is_read: true, read_at: new Date().toISOString() })
-      .eq(''athlete_id'', athleteProfile.athlete_id)
-      .eq(''is_read'', false)
-      .then(() => qc.invalidateQueries({ queryKey: [''athlete_notifications''] }))
+      .eq('athlete_id', athleteProfile.athlete_id)
+      .eq('is_read', false)
+      .then(() => qc.invalidateQueries({ queryKey: ['athlete_notifications'] }))
   }
 
   async function completeTask(params: {
@@ -308,17 +308,17 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
     if (!athleteProfile?.athlete_id) return
     // Find or create completion record
     const { data: existing } = await supabase
-      .from(''task_completions'')
-      .select(''id'')
-      .eq(''task_id'', params.taskId)
-      .eq(''athlete_program_id'', params.programId)
+      .from('task_completions')
+      .select('id')
+      .eq('task_id', params.taskId)
+      .eq('athlete_program_id', params.programId)
       .maybeSingle()
 
     const payload = {
       task_id: params.taskId,
       athlete_program_id: params.programId,
       athlete_id: athleteProfile.athlete_id,
-      status: ''completed'' as const,
+      status: 'completed' as const,
       completed_at: new Date().toISOString(),
       rating: params.rating,
       feedback_text: params.feedback,
@@ -328,32 +328,32 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
     }
 
     if (existing) {
-      await supabase.from(''task_completions'').update(payload).eq(''id'', existing.id)
+      await supabase.from('task_completions').update(payload).eq('id', existing.id)
     } else {
-      await supabase.from(''task_completions'').insert(payload)
+      await supabase.from('task_completions').insert(payload)
     }
-    qc.invalidateQueries({ queryKey: [''task_completions''] })
+    qc.invalidateQueries({ queryKey: ['task_completions'] })
   }
 
   async function sendMessage(conversationId: string, content: string) {
     if (!user?.id) return
-    const role = user.user_metadata?.role === ''athlete'' ? ''athlete'' : ''practitioner''
-    await supabase.from(''messages'').insert({
+    const role = user.user_metadata?.role === 'athlete' ? 'athlete' : 'practitioner'
+    await supabase.from('messages').insert({
       conversation_id: conversationId,
       sender_id: user.id,
       sender_role: role,
       content,
-      content_type: ''text'',
+      content_type: 'text',
     })
     // Update conversation preview
-    await supabase.from(''conversations'').update({
+    await supabase.from('conversations').update({
       last_message_at: new Date().toISOString(),
       last_message_preview: content.slice(0, 100),
-      ...(role === ''athlete'' ? { practitioner_unread: 1 } : { athlete_unread: 0 }),
-    }).eq(''id'', conversationId)
+      ...(role === 'athlete' ? { practitioner_unread: 1 } : { athlete_unread: 0 }),
+    }).eq('id', conversationId)
 
-    qc.invalidateQueries({ queryKey: [''messages'', conversationId] })
-    qc.invalidateQueries({ queryKey: [''athlete_conversation''] })
+    qc.invalidateQueries({ queryKey: ['messages', conversationId] })
+    qc.invalidateQueries({ queryKey: ['athlete_conversation'] })
   }
 
   async function sendRequest(params: {
@@ -365,17 +365,17 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
     preferredTime?: string
   }) {
     if (!athleteProfile) return
-    await supabase.from(''athlete_requests'').insert({
+    await supabase.from('athlete_requests').insert({
       athlete_id: athleteProfile.athlete_id,
       practitioner_id: athleteProfile.practitioner_id,
       request_type: params.type,
       title: params.title,
       description: params.description,
-      urgency: params.urgency ?? ''normal'',
+      urgency: params.urgency ?? 'normal',
       preferred_date: params.preferredDate,
       preferred_time: params.preferredTime,
     })
-    qc.invalidateQueries({ queryKey: [''athlete_requests''] })
+    qc.invalidateQueries({ queryKey: ['athlete_requests'] })
   }
 
   const unreadCount = notifications.filter(n => !n.is_read).length
@@ -397,4 +397,3 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
 
   return <AthleteContext.Provider value={value}>{children}</AthleteContext.Provider>
 }
-
