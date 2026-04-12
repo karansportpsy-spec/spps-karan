@@ -37,11 +37,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     { label: t.nav_psychophysiology,  href: '/assessments/physio',  Icon: Activity },
     { label: t.nav_neurocognitive,    href: '/assessments/neuro',   Icon: Brain },
     { label: t.nav_interventions,     href: '/interventions',       Icon: Lightbulb },
-    { label: 'Athlete Programs',       href: '/programs',            Icon: Layers },
-<<<<<<< HEAD
-=======
-    { label: 'Athlete Messages',       href: '/conversations',       Icon: MessageCircle },
->>>>>>> d1154bf2ef0193a2bc08f4c616eefc6044e57983
+    { label: 'Athlete Programs',       href: '/program builder',            Icon: Layers },
+    { label: 'Athlete Messages',       href: '/conversation',       Icon: MessageCircle },
     { label: 'Consent Forms',          href: '/consent',             Icon: Shield },
     { label: 'Injury Psychology',      href: '/injury',              Icon: Activity },
     { label: 'Mental Performance Lab', href: '/lab',                Icon: FlaskConical },
