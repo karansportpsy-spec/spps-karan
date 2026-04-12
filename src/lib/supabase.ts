@@ -1,32 +1,44 @@
 import { createClient } from '@supabase/supabase-js'
 
 // ── Credentials from environment variables ────────────────────
-// Copy .env.example → .env and fill in your Supabase project values.
-// Get them from: Supabase Dashboard → Settings → API
+// Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel
+// Environment Variables (Settings → Environment Variables) and redeploy.
 
-const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL
-const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY
+const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL  as string | undefined
+const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
+// Log a clear warning in the console instead of throwing.
+// A module-level throw fires BEFORE React mounts — producing a completely
+// blank page with no error UI. This way the app still renders and the
+// practitioner sees a useful error message.
 if (!SUPABASE_URL || !SUPABASE_ANON) {
-  throw new Error(
+  console.error(
     '[SPPS] Missing Supabase credentials.\n' +
-    'Copy .env.example → .env and set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'
+    'Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your Vercel\n' +
+    'Environment Variables, then trigger a Redeploy so Vite can bake\n' +
+    'the values into the production bundle.'
   )
 }
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
-  auth: {
-    autoRefreshToken:   true,
-    persistSession:     true,
-    detectSessionInUrl: true,
-    // storageKey intentionally NOT set — uses the default sb-{project-ref}-auth-token
-    // which allows AuthContext's cleanup code to correctly find and clear the session
-    // when it becomes corrupted (the old 'spps-auth' key was invisible to cleanup)
-  },
-  global: {
-    headers: { 'x-application-name': 'spps-v2' },
-  },
-})
+export const supabase = createClient(
+  SUPABASE_URL  ?? 'https://placeholder.supabase.co',
+  SUPABASE_ANON ?? 'placeholder-anon-key',
+  {
+    auth: {
+      autoRefreshToken:   true,
+      persistSession:     true,
+      detectSessionInUrl: true,
+      // storageKey is intentionally NOT set.
+      // The old 'spps-auth' key caused a conflict: AuthContext cleanup only
+      // scanned for 'sb-*' keys, so corrupted sessions were never cleared,
+      // producing infinite spinners. Supabase's default key ('sb-<ref>-auth-token')
+      // is correct and works with the existing cleanup code.
+    },
+    global: {
+      headers: { 'x-application-name': 'spps-v2' },
+    },
+  }
+)
 
 export type SupabaseClient = typeof supabase
 
