@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 // src/pages/programs/ProgramBuilderPage.tsx
+=======
+// src/pages/program builder/ProgramBuilderPage.tsx
+>>>>>>> d1154bf2ef0193a2bc08f4c616eefc6044e57983
 // Practitioner tool: create intervention programs, add tasks, assign to athletes, track progress
 
 import { useState } from 'react'

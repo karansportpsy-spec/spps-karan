@@ -169,8 +169,11 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
     },
   })
 
+<<<<<<< HEAD
   const athleteProfileValue = athleteProfile ?? null
 
+=======
+>>>>>>> d1154bf2ef0193a2bc08f4c616eefc6044e57983
   // Load the linked athlete record (for check-ins, sessions, etc.)
   const { data: athleteRecord } = useQuery({
     queryKey: ['athlete_record', athleteProfile?.athlete_id],
@@ -221,7 +224,11 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
   })
 
   // Load conversation with practitioner
+<<<<<<< HEAD
   const { data: conversationData } = useQuery<Conversation | null>({
+=======
+  const { data: conversation } = useQuery<Conversation | null>({
+>>>>>>> d1154bf2ef0193a2bc08f4c616eefc6044e57983
     queryKey: ['athlete_conversation', athleteProfile?.athlete_id, athleteProfile?.practitioner_id],
     enabled: !!athleteProfile,
     queryFn: async () => {
@@ -236,8 +243,11 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
     },
   })
 
+<<<<<<< HEAD
   const conversation = conversationData ?? null
 
+=======
+>>>>>>> d1154bf2ef0193a2bc08f4c616eefc6044e57983
   // Realtime: subscribe to new notifications
   useEffect(() => {
     if (!athleteProfile?.athlete_id) return
@@ -385,7 +395,11 @@ export function AthleteProvider({ children }: { children: ReactNode }) {
   const unreadCount = notifications.filter(n => !n.is_read).length
 
   const value: AthleteContextValue = {
+<<<<<<< HEAD
     athleteProfile: athleteProfile ?? null,
+=======
+    athleteProfile,
+>>>>>>> d1154bf2ef0193a2bc08f4c616eefc6044e57983
     athleteRecord,
     programs,
     notifications,

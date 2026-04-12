@@ -28,6 +28,14 @@ import {
 import AcceptInvitePage      from '@/pages/athletes/AcceptInvitePage'
 import AthleteDashboard      from '@/pages/athletes/AthleteDashboard'
 import AthleteMessagesPage   from '@/pages/athletes/AthleteMessagesPage'
+<<<<<<< HEAD
+=======
+import AthleteProgramPage    from '@/pages/athletes/AthleteProgramPage'
+import AthleteProgramsListPage from '@/pages/athletes/AthleteProgramsListPage'
+import AthleteProgressPage   from '@/pages/athletes/AthleteProgressPage'
+
+import ConversationsPage     from '@/pages/conversation/ConversationsPage'
+>>>>>>> d1154bf2ef0193a2bc08f4c616eefc6044e57983
 
 function LoadingScreen({ message = 'Loading SPPS…' }: { message?: string }) {
   return (
@@ -148,6 +156,19 @@ const router = createBrowserRouter([
       { path: '/ai-assistant',             element: <AIAssistantPage /> },
       { path: '/reports',                  element: <ReportsPage /> },
       { path: '/settings',                 element: <SettingsPage /> },
+      { path: '/conversations',            element: <ConversationsPage /> },
+    ],
+  },
+  // ── Protected athlete routes ─────────────────────────────────────
+  {
+    element: <RequireAthlete />,
+    children: [
+      { path: '/athlete/dashboard', element: <AthleteDashboard /> },
+      { path: '/athlete/programs',  element: <AthleteProgramsListPage /> },
+      { path: '/athlete/programs/:programId', element: <AthleteProgramPage /> },
+      { path: '/athlete/progress',  element: <AthleteProgressPage /> },
+      { path: '/athlete/messages',  element: <AthleteMessagesPage /> },
+      { path: '/athlete/ai-chat',   element: <AthleteMessagesPage /> },
     ],
   },
   // ── Protected athlete routes ─────────────────────────────────────
