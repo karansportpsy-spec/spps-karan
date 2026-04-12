@@ -19,7 +19,7 @@ import CustomAssessmentPage  from '@/pages/assessments/CustomAssessmentPage'
 import ConsentFormsPage      from '@/pages/consent/ConsentFormsPage'
 import InjuryPsychologyPage  from '@/pages/injury/InjuryPsychologyPage'
 import MentalPerformanceLabPage from '@/pages/lab/MentalPerformanceLabPage'
-import ProgramBuilderPage from '@/pages/program builder/ProgramBuilderPage'
+import ProgramBuilderPage from '@/pages/programs/ProgramBuilderPage'
 import {
   SessionsPage, CheckInsPage, AssessmentsPage,
   InterventionsPage, AIAssistantPage, ReportsPage, SettingsPage,
@@ -29,6 +29,10 @@ import AcceptInvitePage      from '@/pages/athletes/AcceptInvitePage'
 import AthleteDashboard      from '@/pages/athletes/AthleteDashboard'
 import AthleteMessagesPage   from '@/pages/athletes/AthleteMessagesPage'
 import AthleteProgramPage    from '@/pages/athletes/AthleteProgramPage'
+import AthleteProgramsListPage from '@/pages/athletes/AthleteProgramsListPage'
+import AthleteProgressPage   from '@/pages/athletes/AthleteProgressPage'
+
+import ConversationsPage     from '@/pages/conversations/ConversationsPage'
 
 function LoadingScreen({ message = 'Loading SPPS…' }: { message?: string }) {
   return (
@@ -149,6 +153,7 @@ const router = createBrowserRouter([
       { path: '/ai-assistant',             element: <AIAssistantPage /> },
       { path: '/reports',                  element: <ReportsPage /> },
       { path: '/settings',                 element: <SettingsPage /> },
+      { path: '/conversations',            element: <ConversationsPage /> },
     ],
   },
   // ── Protected athlete routes ─────────────────────────────────────
@@ -156,7 +161,9 @@ const router = createBrowserRouter([
     element: <RequireAthlete />,
     children: [
       { path: '/athlete/dashboard', element: <AthleteDashboard /> },
+      { path: '/athlete/programs',  element: <AthleteProgramsListPage /> },
       { path: '/athlete/programs/:programId', element: <AthleteProgramPage /> },
+      { path: '/athlete/progress',  element: <AthleteProgressPage /> },
       { path: '/athlete/messages',  element: <AthleteMessagesPage /> },
       { path: '/athlete/ai-chat',   element: <AthleteMessagesPage /> },
     ],
