@@ -71,7 +71,7 @@ export default function EnableAthletePortal({ athleteId, athleteFirstName, athle
       if (inviteErr) throw inviteErr
 
       // Auto-create conversation so practitioner can message first
-      await supabase.from('conversation').upsert({
+      await supabase.from('conversations').upsert({
         practitioner_id: user.id,
         athlete_id: athleteId,
         status: 'active',
