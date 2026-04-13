@@ -19,24 +19,24 @@ import CustomAssessmentPage  from '@/pages/assessments/CustomAssessmentPage'
 import ConsentFormsPage      from '@/pages/consent/ConsentFormsPage'
 import InjuryPsychologyPage  from '@/pages/injury/InjuryPsychologyPage'
 import MentalPerformanceLabPage from '@/pages/lab/MentalPerformanceLabPage'
-import ProgramBuilderPage from '@/pages/interventions/ProgramBuilderPage'
+import ProgramBuilderPage    from '@/pages/programs/ProgramBuilderPage'
+import ConversationsPage     from '@/pages/conversations/ConversationsPage'
 import {
   SessionsPage, CheckInsPage, AssessmentsPage,
   InterventionsPage, AIAssistantPage, ReportsPage, SettingsPage,
 } from '@/pages/AppPages'
 
-import AcceptInvitePage      from '@/pages/athletes/AcceptInvitePage'
-import AthleteDashboard      from '@/pages/athletes/AthleteDashboard'
-import AthleteMessagesPage   from '@/pages/athletes/AthleteMessagesPage'
-import AthleteProgramPage    from '@/pages/athletes/AthleteProgramPage'
+// Athlete portal pages — all inside src/pages/athletes/
+import AcceptInvitePage        from '@/pages/athletes/AcceptInvitePage'
+import AthleteDashboard        from '@/pages/athletes/AthleteDashboard'
+import AthleteMessagesPage     from '@/pages/athletes/AthleteMessagesPage'
+import AthleteProgramPage      from '@/pages/athletes/AthleteProgramPage'
 import AthleteProgramsListPage from '@/pages/athletes/AthleteProgramsListPage'
-import AthleteProgressPage   from '@/pages/athletes/AthleteProgressPage'
-import AthleteDailyLogPage   from '@/pages/athletes/AthleteDailyLogPage'
-import AthleteRequestsPage   from '@/pages/athletes/AthleteRequestsPage'
-import AthleteJournalPage    from '@/pages/athletes/AthleteJournalPage'
-import AthleteCompetitionPage from '@/pages/athletes/AthleteCompetitionPage'
-
-import ConversationsPage     from '@/pages/conversation/ConversationsPage'
+import AthleteProgressPage     from '@/pages/athletes/AthleteProgressPage'
+import AthleteDailyLogPage     from '@/pages/athletes/AthleteDailyLogPage'
+import AthleteRequestsPage     from '@/pages/athletes/AthleteRequestsPage'
+import AthleteJournalPage      from '@/pages/athletes/AthleteJournalPage'
+import AthleteCompetitionPage  from '@/pages/athletes/AthleteCompetitionPage'
 
 function LoadingScreen({ message = 'Loading SPPS…' }: { message?: string }) {
   return (
@@ -55,11 +55,8 @@ function RequireAuth() {
   const location = useLocation()
   if (loading) return <LoadingScreen />
   if (!user) return <Navigate to="/auth/login" state={{ from: location }} replace />
-  // Athletes have their own portal — never let them into the practitioner shell
   if (user.user_metadata?.role === 'athlete') return <Navigate to="/athlete/dashboard" replace />
-  // Spinner only while actively loading — never block forever
   if (profileLoading) return <LoadingScreen message="Loading your profile…" />
-  // After loading: if still null, recovery also failed → send to login
   if (practitioner === null) return <Navigate to="/auth/login" state={{ from: location }} replace />
   if (!practitioner.compliance_completed) return <Navigate to="/compliance/hipaa" replace />
   return <Outlet />
@@ -90,10 +87,8 @@ function RedirectIfAuth({ children }: { children: React.ReactNode }) {
   const { user, loading, practitioner, profileLoading } = useAuth()
   if (loading) return <LoadingScreen />
   if (user) {
-    // Athletes go directly to their portal — no compliance flow
     if (user.user_metadata?.role === 'athlete') return <Navigate to="/athlete/dashboard" replace />
     if (profileLoading) return <LoadingScreen />
-    // If practitioner still null after load — recovery failed; show auth pages
     if (practitioner === null) return <>{children}</>
     if (!practitioner.compliance_completed) return <Navigate to="/compliance/hipaa" replace />
     if (!practitioner.profile_completed) return <Navigate to="/profile/setup" replace />
@@ -102,7 +97,6 @@ function RedirectIfAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-// ── Athlete auth guard ──────────────────────────────────────────
 function RequireAthlete() {
   const { user, loading } = useAuth()
   const location = useLocation()
@@ -116,7 +110,6 @@ const router = createBrowserRouter([
   { path: '/', element: <LandingPage /> },
   { path: '/auth/login',  element: <RedirectIfAuth><LoginPage  /></RedirectIfAuth> },
   { path: '/auth/signup', element: <RedirectIfAuth><SignupPage /></RedirectIfAuth> },
-  // Athlete invite acceptance — public, no auth required
   { path: '/athlete/accept-invite', element: <AcceptInvitePage /> },
   {
     path: '/compliance',
@@ -150,30 +143,29 @@ const router = createBrowserRouter([
       { path: '/assessments/neuro',        element: <NeurocognitivePage /> },
       { path: '/assessments/custom',       element: <CustomAssessmentPage /> },
       { path: '/interventions',            element: <InterventionsPage /> },
-      { path: '/programs',                     element: <ProgramBuilderPage /> },
+      { path: '/programs',                 element: <ProgramBuilderPage /> },
       { path: '/consent',                  element: <ConsentFormsPage /> },
       { path: '/injury',                   element: <InjuryPsychologyPage /> },
       { path: '/lab',                      element: <MentalPerformanceLabPage /> },
       { path: '/ai-assistant',             element: <AIAssistantPage /> },
       { path: '/reports',                  element: <ReportsPage /> },
       { path: '/settings',                 element: <SettingsPage /> },
-      { path: '/conversation',            element: <ConversationsPage /> },
+      { path: '/conversations',            element: <ConversationsPage /> },
     ],
   },
-  // ── Protected athlete routes ─────────────────────────────────────
   {
     element: <RequireAthlete />,
     children: [
-      { path: '/athlete/dashboard',              element: <AthleteDashboard /> },
-      { path: '/athlete/daily-log',              element: <AthleteDailyLogPage /> },
-      { path: '/athlete/programs',               element: <AthleteProgramsListPage /> },
-      { path: '/athlete/programs/:programId',    element: <AthleteProgramPage /> },
-      { path: '/athlete/progress',               element: <AthleteProgressPage /> },
-      { path: '/athlete/messages',               element: <AthleteMessagesPage /> },
-      { path: '/athlete/ai-chat',                element: <AthleteMessagesPage /> },
-      { path: '/athlete/requests',               element: <AthleteRequestsPage /> },
-      { path: '/athlete/journal',                element: <AthleteJournalPage /> },
-      { path: '/athlete/competitions',           element: <AthleteCompetitionPage /> },
+      { path: '/athlete/dashboard',            element: <AthleteDashboard /> },
+      { path: '/athlete/daily-log',            element: <AthleteDailyLogPage /> },
+      { path: '/athlete/programs',             element: <AthleteProgramsListPage /> },
+      { path: '/athlete/programs/:programId',  element: <AthleteProgramPage /> },
+      { path: '/athlete/progress',             element: <AthleteProgressPage /> },
+      { path: '/athlete/messages',             element: <AthleteMessagesPage /> },
+      { path: '/athlete/ai-chat',              element: <AthleteMessagesPage /> },
+      { path: '/athlete/requests',             element: <AthleteRequestsPage /> },
+      { path: '/athlete/journal',              element: <AthleteJournalPage /> },
+      { path: '/athlete/competitions',         element: <AthleteCompetitionPage /> },
     ],
   },
   { path: '*', element: <NotFoundPage /> },
