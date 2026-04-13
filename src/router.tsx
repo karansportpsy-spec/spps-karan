@@ -19,8 +19,8 @@ import CustomAssessmentPage  from '@/pages/assessments/CustomAssessmentPage'
 import ConsentFormsPage      from '@/pages/consent/ConsentFormsPage'
 import InjuryPsychologyPage  from '@/pages/injury/InjuryPsychologyPage'
 import MentalPerformanceLabPage from '@/pages/lab/MentalPerformanceLabPage'
-import ProgramBuilderPage    from '@/pages/interventions/ProgramBuilderPage'
-import ConversationsPage     from '@/pages/conversation/ConversationsPage'
+import ProgramBuilderPage    from '@/pages/programs/ProgramBuilderPage'
+import ConversationsPage     from '@/pages/conversations/ConversationsPage'
 import {
   SessionsPage, CheckInsPage, AssessmentsPage,
   InterventionsPage, AIAssistantPage, ReportsPage, SettingsPage,
