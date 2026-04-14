@@ -16,7 +16,7 @@ export function usePractitionerSessionRequests(statusFilter?: string[]) {
     staleTime: 0,
     queryFn: async () => {
       let q = supabase
-        .from('athlete_requests')
+        .from('athlete_session_requests')
         .select('*, athlete:athletes(first_name,last_name,sport,uid_code)')
         .eq('practitioner_id', user!.id)
         .order('created_at', { ascending: false })
@@ -35,7 +35,7 @@ export function usePractitionerSessionRequests(statusFilter?: string[]) {
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
-        table: 'athlete_requests',
+        table: 'athlete_session_requests',
         filter: `practitioner_id=eq.${user.id}`,
       }, () => {
         qc.invalidateQueries({ queryKey: ['practitioner_session_requests'] })
@@ -56,7 +56,7 @@ export function usePendingRequestCount() {
     staleTime: 0,
     queryFn: async () => {
       const { count, error } = await supabase
-        .from('athlete_requests')
+        .from('athlete_session_requests')
         .select('id', { count: 'exact', head: true })
         .eq('practitioner_id', user!.id)
         .in('status', ['pending'])
@@ -79,7 +79,7 @@ export function useRespondToRequest() {
       linkedSessionId?: string
     }) => {
       const { data, error } = await supabase
-        .from('athlete_requests')
+        .from('athlete_session_requests')
         .update({
           status,
           practitioner_response: response,
@@ -118,7 +118,7 @@ export function useSubmitSessionRequest() {
     }) => {
       if (!user?.id) throw new Error('Not authenticated')
       const { data, error } = await supabase
-        .from('athlete_requests')
+        .from('athlete_session_requests')
         .insert({
           athlete_id: params.athleteId,
           practitioner_id: params.practitionerId,
@@ -152,7 +152,7 @@ export function useAthleteRequests(athleteAuthId?: string) {
     staleTime: 0,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('athlete_requests')
+        .from('athlete_session_requests')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(20)
@@ -169,7 +169,7 @@ export function useAthleteRequests(athleteAuthId?: string) {
       .on('postgres_changes', {
         event: 'UPDATE',
         schema: 'public',
-        table: 'athlete_requests',
+        table: 'athlete_session_requests',
         filter: `athlete_auth_id=eq.${athleteAuthId}`,
       }, () => {
         qc.invalidateQueries({ queryKey: ['athlete_requests', athleteAuthId] })
