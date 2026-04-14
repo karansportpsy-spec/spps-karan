@@ -1334,14 +1334,14 @@ export default function CaseFormulationPage() {
 
     // ── Risk alert ────────────────────────────────────────────────────────────
     const riskAlert = (anon.risk_level==='high'||anon.risk_level==='critical')
-      ? `<div class='alert-high no-break'>⚠ <strong>Elevated Risk — ${anon.risk_level.toUpperCase()}:</strong>
+      ? `<div class="alert-high no-break">⚠ <strong>Elevated Risk — ${anon.risk_level.toUpperCase()}:</strong>
           This athlete is flagged as ${anon.risk_level} risk. Ensure crisis protocols are active and documentation is current.</div>`
       : ''
 
     // ── SESSIONS ──────────────────────────────────────────────────────────────
     const sessHtml = sessions.length===0
-      ? '<p style='color:#9ca3af;font-size:12px;padding:12px 0'>No sessions recorded.</p>'
-      : `<div class='metric-grid' style='grid-template-columns:repeat(3,1fr);margin-bottom:16px'>
+      ? '<p style="color:#9ca3af;font-size:12px;padding:12px 0">No sessions recorded.</p>'
+      : `<div class="metric-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
           <div class="metric-cell">
             <div class="metric-val" style="color:#3b82f6">${sessions.length}</div>
             <div class="metric-lbl">Total</div>
@@ -1373,8 +1373,8 @@ export default function CaseFormulationPage() {
     // ── CHECK-INS ─────────────────────────────────────────────────────────────
     const scoreColor = (v: number) => v>=7?'#22c55e':v>=5?'#f59e0b':'#ef4444'
     const chkHtml = checkins.length===0
-      ? '<p style='color:#9ca3af;font-size:12px;padding:12px 0'>No check-ins recorded.</p>'
-      : `<div class='metric-grid-5'>
+      ? '<p style="color:#9ca3af;font-size:12px;padding:12px 0">No check-ins recorded.</p>'
+      : `<div class="metric-grid-5">
           ${[['Mood',avgMood,'#3b82f6'],['Stress',avgStress,'#ef4444'],['Sleep',avgSleep,'#f59e0b'],['Readiness',avgReady,'#10b981'],['Flagged',String(flagged.length),'#f43f5e']].map(([l,v,c])=>`
           <div class="metric-cell">
             <div class="metric-val" style="color:${c}">${v}</div>
@@ -1399,7 +1399,7 @@ export default function CaseFormulationPage() {
 
     // ── ASSESSMENTS ───────────────────────────────────────────────────────────
     const asmHtml = assessments.length===0
-      ? '<p style='color:#9ca3af;font-size:12px;padding:12px 0'>No assessments administered.</p>'
+      ? '<p style="color:#9ca3af;font-size:12px;padding:12px 0">No assessments administered.</p>'
       : assessments.map((a:any)=>{
           const isExt = String(a.tool).startsWith('EXTERNAL:')
           const tname = isExt ? String(a.tool).replace('EXTERNAL:','') : a.tool
@@ -1437,7 +1437,7 @@ export default function CaseFormulationPage() {
     const byCat: Record<string,any[]> = {}
     interventions.forEach((i:any)=>{ if(!byCat[i.category])byCat[i.category]=[]; byCat[i.category].push(i) })
     const intHtml = interventions.length===0
-      ? '<p style='color:#9ca3af;font-size:12px;padding:12px 0'>No interventions logged.</p>'
+      ? '<p style="color:#9ca3af;font-size:12px;padding:12px 0">No interventions logged.</p>'
       : Object.entries(byCat).map(([cat,list])=>`
           <div style="margin-bottom:14px">
             <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;
@@ -1479,7 +1479,7 @@ export default function CaseFormulationPage() {
         <thead><tr><th>Date</th><th>OSIICS / Diagnosis</th><th>Context</th><th>Severity</th><th>Status</th><th>Missed</th><th>Psych Ref</th></tr></thead>
         <tbody>${injuryRecords.map((r:any)=>{
           const diagLabel = r.osiics_code_1
-            ? \`<span class='chip chip-purple' style='font-size:9px'>\${r.osiics_code_1}</span> \${r.osiics_diagnosis_1??r.diagnosis_text}\`
+            ? \`<span class="chip chip-purple" style="font-size:9px">\${r.osiics_code_1}</span> \${r.osiics_diagnosis_1??r.diagnosis_text}\`
             : r.diagnosis_text
           return \`<tr>
             <td style="white-space:nowrap;font-weight:500">\${r.date_of_injury}</td>
@@ -1642,7 +1642,7 @@ export default function CaseFormulationPage() {
 
     // ── REPORTS ───────────────────────────────────────────────────────────────
     const repHtml = reports.length===0
-      ? '<p style='color:#9ca3af;font-size:12px;padding:12px 0'>No reports generated.</p>'
+      ? '<p style="color:#9ca3af;font-size:12px;padding:12px 0">No reports generated.</p>'
       : reports.map((r:any)=>`<div class="card no-break">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
             <strong style="font-size:12px;color:#0f172a">${r.title}</strong>
