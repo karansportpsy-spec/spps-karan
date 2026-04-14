@@ -6,6 +6,7 @@ import {
   Target, Calendar, CheckCircle, FileText, Sparkles, User,
   Phone, Mail, Shield, TrendingUp, TrendingDown, Clock,
   ChevronRight, BarChart2, Heart, Zap, FileDown, Folder,
+  Notebook,
 } from 'lucide-react'
 import AppShell from '@/components/layout/AppShell'
 import { Button, Card, Badge, Avatar, Spinner } from '@/components/ui'
@@ -24,6 +25,7 @@ import {
   BarChart, Bar, CartesianGrid, Legend,
 } from 'recharts'
 import type { Report, ReportType } from '@/types'
+import AthleteDailyLogsPanel from '@/components/practitioner/AthleteDailyLogsPanel'
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────
 const TABS = [
