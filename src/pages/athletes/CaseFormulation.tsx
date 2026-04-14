@@ -1469,45 +1469,60 @@ export default function CaseFormulationPage() {
       const avgReadiness = psychReadiness.length
         ? (psychReadiness.reduce((a:number,r:any)=>a+r.overall_readiness,0)/psychReadiness.length).toFixed(0) : null
 
-      return `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
-        <div class="metric-cell"><div class="metric-val" style="color:#ef4444">${injuryRecords.length}</div><div class="metric-lbl">Total Injuries</div></div>
-        <div class="metric-cell"><div class="metric-val" style="color:#f59e0b">${active}</div><div class="metric-lbl">Active</div></div>
-        <div class="metric-cell"><div class="metric-val" style="color:#8b5cf6">${psychReadiness.length}</div><div class="metric-lbl">Readiness Assessments</div></div>
-        <div class="metric-cell"><div class="metric-val" style="color:${avgReadiness&&parseInt(avgReadiness)>=70?'#22c55e':avgReadiness?'#f59e0b':'#9ca3af'}">${avgReadiness??'—'}${avgReadiness?'%':''}</div><div class="metric-lbl">Avg Readiness</div></div>
-      </div>
-      <table class="no-break">
-        <thead><tr><th>Date</th><th>OSIICS / Diagnosis</th><th>Context</th><th>Severity</th><th>Status</th><th>Missed</th><th>Psych Ref</th></tr></thead>
-        <tbody>${injuryRecords.map((r:any)=>{
-          const diagLabel = r.osiics_code_1
-            ? \`<span class="chip chip-purple" style="font-size:9px">\${r.osiics_code_1}</span> \${r.osiics_diagnosis_1??r.diagnosis_text}\`
-            : r.diagnosis_text
-          return \`<tr>
-            <td style="white-space:nowrap;font-weight:500">\${r.date_of_injury}</td>
-            <td style="font-size:10.5px">\${diagLabel}</td>
-            <td>\${r.context}</td>
-            <td><span style="font-weight:700;color:\${severityColor[r.severity]??'#6b7280'}">\${r.severity}</span></td>
-            <td><span class="chip \${r.status==='recovered'?'chip-green':r.status==='acute'?'chip-red':'chip-amber'}">\${r.status}</span></td>
-            <td style="font-size:10.5px">\${r.missed_days??0}d / \${r.missed_matches??0} matches</td>
-            <td style="text-align:center">\${r.psych_referral_needed?'<span style="color:#dc2626;font-weight:700">⚠ YES</span>':'—'}</td>
-          </tr>\`
-        }).join('')}</tbody>
-      </table>
-      ${psychReadiness.length>0?`<div style="margin-top:16px"><div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Psychological Readiness Assessments</div>
-      <table class="no-break">
-        <thead><tr><th>Date</th><th>Overall Readiness</th><th>RTP Cleared</th><th>ACL-RSI</th><th>SFK-11</th><th>TFSI-R</th><th>Notes</th></tr></thead>
-        <tbody>${psychReadiness.map((r:any)=>{
-          const col = r.overall_readiness>=70?'#22c55e':r.overall_readiness>=50?'#f59e0b':'#ef4444'
-          return \`<tr>
-            <td style="white-space:nowrap;font-weight:500">\${r.assessed_at?.slice(0,10)??'—'}</td>
-            <td><span style="font-size:16px;font-weight:900;color:\${col}">\${r.overall_readiness}%</span></td>
-            <td>\${r.ready_to_return?'<span style="color:#16a34a;font-weight:700">✓ CLEARED</span>':'<span style="color:#ef4444">Not cleared</span>'}</td>
-            <td>\${r.acl_psych_total??'—'}</td>
-            <td>\${r.sfk_total??'—'}</td>
-            <td>\${r.tfsi_r_total??'—'}</td>
-            <td style="font-size:10px;max-width:160px;color:#6b7280">\${r.notes?.slice(0,100)??'—'}</td>
-          </tr>\`
-        }).join('')}</tbody>
-      </table></div>`:''}`
+      // ── Extract map callbacks to avoid triple-nested template literals (Rolldown parse bug) ──
+      const injuryRows = injuryRecords.map((r:any) => {
+        const diagLabel = r.osiics_code_1
+          ? '<span class="chip chip-purple" style="font-size:9px">' + r.osiics_code_1 + '</span> ' + (r.osiics_diagnosis_1 ?? r.diagnosis_text)
+          : r.diagnosis_text
+        const statusClass = r.status === 'recovered' ? 'chip-green' : r.status === 'acute' ? 'chip-red' : 'chip-amber'
+        const sevColor = severityColor[r.severity] ?? '#6b7280'
+        const psychRef = r.psych_referral_needed ? '<span style="color:#dc2626;font-weight:700">⚠ YES</span>' : '—'
+        return '<tr>' +
+          '<td style="white-space:nowrap;font-weight:500">' + r.date_of_injury + '</td>' +
+          '<td style="font-size:10.5px">' + diagLabel + '</td>' +
+          '<td>' + r.context + '</td>' +
+          '<td><span style="font-weight:700;color:' + sevColor + '">' + r.severity + '</span></td>' +
+          '<td><span class="chip ' + statusClass + '">' + r.status + '</span></td>' +
+          '<td style="font-size:10.5px">' + (r.missed_days ?? 0) + 'd / ' + (r.missed_matches ?? 0) + ' matches</td>' +
+          '<td style="text-align:center">' + psychRef + '</td>' +
+          '</tr>'
+      }).join('')
+
+      const readinessRows = psychReadiness.map((r:any) => {
+        const col = r.overall_readiness >= 70 ? '#22c55e' : r.overall_readiness >= 50 ? '#f59e0b' : '#ef4444'
+        const rtpCell = r.ready_to_return
+          ? '<span style="color:#16a34a;font-weight:700">✓ CLEARED</span>'
+          : '<span style="color:#ef4444">Not cleared</span>'
+        return '<tr>' +
+          '<td style="white-space:nowrap;font-weight:500">' + (r.assessed_at?.slice(0, 10) ?? '—') + '</td>' +
+          '<td><span style="font-size:16px;font-weight:900;color:' + col + '">' + r.overall_readiness + '%</span></td>' +
+          '<td>' + rtpCell + '</td>' +
+          '<td>' + (r.acl_psych_total ?? '—') + '</td>' +
+          '<td>' + (r.sfk_total ?? '—') + '</td>' +
+          '<td>' + (r.tfsi_r_total ?? '—') + '</td>' +
+          '<td style="font-size:10px;max-width:160px;color:#6b7280">' + (r.notes?.slice(0, 100) ?? '—') + '</td>' +
+          '</tr>'
+      }).join('')
+
+      const readinessSection = psychReadiness.length > 0
+        ? '<div style="margin-top:16px"><div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Psychological Readiness Assessments</div>' +
+          '<table class="no-break"><thead><tr><th>Date</th><th>Overall Readiness</th><th>RTP Cleared</th><th>ACL-RSI</th><th>SFK-11</th><th>TFSI-R</th><th>Notes</th></tr></thead>' +
+          '<tbody>' + readinessRows + '</tbody></table></div>'
+        : ''
+
+      const avgReadinessColor = avgReadiness && parseInt(avgReadiness) >= 70 ? '#22c55e' : avgReadiness ? '#f59e0b' : '#9ca3af'
+      const avgReadinessVal = (avgReadiness ?? '—') + (avgReadiness ? '%' : '')
+
+      return '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">' +
+        '<div class="metric-cell"><div class="metric-val" style="color:#ef4444">' + injuryRecords.length + '</div><div class="metric-lbl">Total Injuries</div></div>' +
+        '<div class="metric-cell"><div class="metric-val" style="color:#f59e0b">' + active + '</div><div class="metric-lbl">Active</div></div>' +
+        '<div class="metric-cell"><div class="metric-val" style="color:#8b5cf6">' + psychReadiness.length + '</div><div class="metric-lbl">Readiness Assessments</div></div>' +
+        '<div class="metric-cell"><div class="metric-val" style="color:' + avgReadinessColor + '">' + avgReadinessVal + '</div><div class="metric-lbl">Avg Readiness</div></div>' +
+        '</div>' +
+        '<table class="no-break">' +
+        '<thead><tr><th>Date</th><th>OSIICS / Diagnosis</th><th>Context</th><th>Severity</th><th>Status</th><th>Missed</th><th>Psych Ref</th></tr></thead>' +
+        '<tbody>' + injuryRows + '</tbody></table>' +
+        readinessSection
     })()
 
     // ── PHYSIO & WEARABLES ────────────────────────────────────────────────────
