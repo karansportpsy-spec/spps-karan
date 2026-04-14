@@ -1,4 +1,4 @@
-// src/pages/athletes/AthleteDashboard.tsx
+// src/pages/athlete/AthleteDashboard.tsx
 // The athlete's home screen — tasks, messages, next session, progress, programs
 
 import { useState } from 'react'
@@ -7,13 +7,12 @@ import { useQuery } from '@tanstack/react-query'
 import {
   CheckCircle, MessageSquare, Calendar, TrendingUp, Bell,
   ChevronRight, Clock, Zap, Award, Target, Play, BookOpen,
-  Mic, Video, AlignLeft, Star, BarChart2, LogOut, X, LayoutDashboard,
-  Heart, Smile,
+  Mic, Video, AlignLeft, Star, BarChart2, LogOut, X,
 } from 'lucide-react'
 import { useAthlete } from '@/contexts/AthleteContext'
+import SharedReportsViewer from '@/components/athlete/SharedReportsViewer'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
-import { useQueryClient } from '@tanstack/react-query'
 
 // ── Task type icons ────────────────────────────────────────────────────────────
 const TASK_ICONS: Record<string, React.ElementType> = {
@@ -36,157 +35,6 @@ const TASK_COLORS: Record<string, { bg: string; icon: string; border: string }> 
   reading:     { bg: 'bg-indigo-50', icon: 'text-indigo-500', border: 'border-indigo-200' },
   self_rating: { bg: 'bg-amber-50',  icon: 'text-amber-500',  border: 'border-amber-200' },
   check_in:    { bg: 'bg-green-50',  icon: 'text-green-500',  border: 'border-green-200' },
-}
-
-// ── Daily Check-In Card ──────────────────────────────────────────────────────
-
-const CHECKIN_FIELDS = [
-  { key: 'mood_score',       label: 'Mood',       emoji: '😊', color: '#3b82f6', low: 'Low', high: 'Great' },
-  { key: 'stress_score',     label: 'Stress',     emoji: '😤', color: '#f59e0b', low: 'Calm', high: 'Very stressed' },
-  { key: 'sleep_score',      label: 'Sleep',      emoji: '😴', color: '#8b5cf6', low: 'Poor', high: 'Excellent' },
-  { key: 'readiness_score',  label: 'Readiness',  emoji: '⚡', color: '#10b981', low: 'Not ready', high: 'Fully ready' },
-  { key: 'motivation_score', label: 'Motivation', emoji: '🔥', color: '#ef4444', low: 'Low', high: 'Very high' },
-]
-
-function DailyCheckInCard({ athleteId, practitionerId }: { athleteId: string; practitionerId: string }) {
-  const qc = useQueryClient()
-  const [open, setOpen] = useState(false)
-  const [scores, setScores] = useState<Record<string, number>>({
-    mood_score: 7, stress_score: 4, sleep_score: 7, readiness_score: 7, motivation_score: 7,
-  })
-  const [notes, setNotes] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [done, setDone] = useState(false)
-
-  // Check if already checked in today
-  const { data: todayCheckin } = useQuery({
-    queryKey: ['athlete_today_checkin', athleteId],
-    enabled: !!athleteId,
-    queryFn: async () => {
-      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
-      const { data } = await supabase.from('check_ins').select('id,mood_score,stress_score,sleep_score')
-        .eq('athlete_id', athleteId).gte('checked_in_at', todayStart.toISOString()).limit(1).maybeSingle()
-      return data
-    },
-  })
-
-  async function handleSubmit() {
-    setSaving(true)
-    try {
-      await supabase.from('check_ins').insert({
-        practitioner_id: practitionerId,
-        athlete_id: athleteId,
-        ...scores,
-        notes: notes || null,
-      })
-      setDone(true)
-      qc.invalidateQueries({ queryKey: ['athlete_today_checkin'] })
-      qc.invalidateQueries({ queryKey: ['athlete_checkins_recent'] })
-      qc.invalidateQueries({ queryKey: ['athlete_progress_checkins'] })
-      setTimeout(() => { setOpen(false); setDone(false) }, 1500)
-    } catch (err) {
-      console.error('[CheckIn] Failed:', err)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  // Already checked in today
-  if (todayCheckin) {
-    return (
-      <div className="bg-green-50 border border-green-200 rounded-2xl px-4 py-3 flex items-center gap-3">
-        <div className="w-9 h-9 bg-green-100 rounded-xl flex items-center justify-center shrink-0">
-          <CheckCircle size={18} className="text-green-500" />
-        </div>
-        <div>
-          <p className="text-sm font-semibold text-green-800">Today's check-in done</p>
-          <p className="text-xs text-green-600">
-            Mood {todayCheckin.mood_score} · Stress {todayCheckin.stress_score} · Sleep {todayCheckin.sleep_score}
-          </p>
-        </div>
-      </div>
-    )
-  }
-
-  // Not checked in — show prompt or expanded form
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)}
-        className="w-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-2xl p-4 text-left text-white shadow-sm hover:shadow-md transition-all active:scale-[0.99]">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-              <Smile size={22} />
-            </div>
-            <div>
-              <p className="font-bold text-sm">Daily Check-In</p>
-              <p className="text-xs text-blue-200">How are you feeling today? Takes 30 seconds</p>
-            </div>
-          </div>
-          <ChevronRight size={18} className="text-blue-200" />
-        </div>
-      </button>
-    )
-  }
-
-  // Expanded check-in form
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-white">
-          <Smile size={18} />
-          <p className="font-bold text-sm">Daily Check-In</p>
-        </div>
-        <button onClick={() => setOpen(false)} className="text-white/60 hover:text-white"><X size={16} /></button>
-      </div>
-
-      {done ? (
-        <div className="flex flex-col items-center py-8 gap-2">
-          <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center">
-            <CheckCircle size={28} className="text-green-500" />
-          </div>
-          <p className="font-bold text-gray-900">Check-in recorded!</p>
-          <p className="text-xs text-gray-400">Your practitioner will see this</p>
-        </div>
-      ) : (
-        <div className="p-4 space-y-4">
-          {CHECKIN_FIELDS.map(f => {
-            const val = scores[f.key] ?? 5
-            return (
-              <div key={f.key}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
-                    <span>{f.emoji}</span> {f.label}
-                  </span>
-                  <span className="text-sm font-black" style={{ color: f.color }}>{val}<span className="text-xs font-normal text-gray-400">/10</span></span>
-                </div>
-                <input type="range" min={1} max={10} value={val}
-                  onChange={e => setScores(s => ({ ...s, [f.key]: +e.target.value }))}
-                  className="w-full h-2 rounded-full appearance-none cursor-pointer"
-                  style={{ accentColor: f.color }} />
-                <div className="flex justify-between text-xs text-gray-300 mt-0.5">
-                  <span>{f.low}</span><span>{f.high}</span>
-                </div>
-              </div>
-            )
-          })}
-
-          <div>
-            <p className="text-sm font-medium text-gray-700 mb-1">Notes (optional)</p>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2}
-              placeholder="How are you feeling? Anything on your mind?"
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-400" />
-          </div>
-
-          <button onClick={handleSubmit} disabled={saving}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-60">
-            {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Heart size={16} />}
-            {saving ? 'Saving…' : 'Submit Check-In'}
-          </button>
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ── Hooks ─────────────────────────────────────────────────────────────────────
@@ -511,39 +359,6 @@ export default function AthleteDashboard() {
           ))}
         </div>
 
-        {/* ── Daily Log + Quick Actions ── */}
-        <Link to="/athlete/daily-log"
-          className="block bg-gradient-to-r from-blue-500 to-blue-600 rounded-2xl p-4 text-white shadow-sm hover:shadow-md transition-all active:scale-[0.99]">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-                <Smile size={22} />
-              </div>
-              <div>
-                <p className="font-bold text-sm">Daily Log</p>
-                <p className="text-xs text-blue-200">Wellbeing · Training · 5 C's · Nutrition</p>
-              </div>
-            </div>
-            <ChevronRight size={18} className="text-blue-200" />
-          </div>
-        </Link>
-
-        {/* Quick access cards */}
-        <div className="grid grid-cols-3 gap-2">
-          <Link to="/athlete/journal" className="bg-white rounded-xl border border-gray-100 p-3 text-center hover:shadow-sm transition-all">
-            <span className="text-lg">📓</span>
-            <p className="text-xs font-semibold text-gray-700 mt-1">Journal</p>
-          </Link>
-          <Link to="/athlete/competitions" className="bg-white rounded-xl border border-gray-100 p-3 text-center hover:shadow-sm transition-all">
-            <span className="text-lg">🏆</span>
-            <p className="text-xs font-semibold text-gray-700 mt-1">Competitions</p>
-          </Link>
-          <Link to="/athlete/requests" className="bg-white rounded-xl border border-gray-100 p-3 text-center hover:shadow-sm transition-all">
-            <span className="text-lg">📅</span>
-            <p className="text-xs font-semibold text-gray-700 mt-1">Request Session</p>
-          </Link>
-        </div>
-
         {/* ── Today's Tasks ── */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
@@ -701,6 +516,20 @@ export default function AthleteDashboard() {
           </div>
         )}
 
+        {/* ── Shared Reports ── */}
+        {athleteProfile?.athlete_id && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
+              <h2 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                <FileText size={15} className="text-purple-500" /> From Your Practitioner
+              </h2>
+            </div>
+            <div className="px-4 py-3">
+              <SharedReportsViewer athleteId={athleteProfile.athlete_id} />
+            </div>
+          </div>
+        )}
+
         {/* ── Bottom nav spacer ── */}
         <div className="h-20" />
       </div>
@@ -743,3 +572,5 @@ export default function AthleteDashboard() {
   )
 }
 
+// Fix: import LayoutDashboard
+import { LayoutDashboard } from 'lucide-react'
