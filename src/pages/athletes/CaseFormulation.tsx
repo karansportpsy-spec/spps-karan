@@ -17,7 +17,7 @@ import { callGroq } from '@/lib/groq'
 import { riskColor, statusColor, fmtDate } from '@/lib/utils'
 import { anonymise, redactNote, ANONYMISATION_DISCLAIMER } from '@/lib/athleteUID'
 import AthleteDocumentsPanel, { useAthleteDocuments } from '@/components/AthleteDocumentsPanel'
-import { FlaskConical, Watch, Dumbbell, Bandage } from 'lucide-react'
+import { FlaskConical, Watch, Dumbbell } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   RadarChart, Radar, PolarGrid, PolarAngleAxis,
@@ -34,7 +34,7 @@ const TABS = [
   { id: 'interventions', label: 'Interventions',  icon: Target },
   { id: 'reports',       label: 'Reports',        icon: FileText },
   { id: 'documents',     label: 'Documents',      icon: Folder },
-  { id: 'injury',        label: 'Injury Psychology',  icon: Bandage },
+  { id: 'injury',        label: 'Injury Psychology',  icon: Heart },
   { id: 'daily_logs',    label: 'Daily Logs',         icon: BookOpen },
   { id: 'physio',        label: 'Physio & Wearables', icon: Activity },
   { id: 'lab',           label: 'Lab Technology',  icon: FlaskConical },
@@ -2238,7 +2238,7 @@ function InjuryPsychTab({ injuryRecords, psychReadiness }: { injuryRecords: any[
   if (injuryRecords.length === 0 && psychReadiness.length === 0) {
     return (
       <div className="flex flex-col items-center py-16 text-center">
-        <Bandage size={40} className="text-gray-200 mb-3" />
+        <Activity size={40} className="text-gray-200 mb-3" />
         <p className="text-sm text-gray-400">No injury records for this athlete.</p>
         <p className="text-xs text-gray-300 mt-1">Log injuries via Injury Psychology in the sidebar.</p>
       </div>
@@ -2253,7 +2253,7 @@ function InjuryPsychTab({ injuryRecords, psychReadiness }: { injuryRecords: any[
 
   return (
     <div className="space-y-5">
-      <SectionHeader icon={Bandage} title="Injury Psychology" color="red" />
+      <SectionHeader icon={Heart} title="Injury Psychology" color="red" />
 
       {/* Summary strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
