@@ -17,11 +17,10 @@ import { callGroq } from '@/lib/groq'
 import { riskColor, statusColor, fmtDate } from '@/lib/utils'
 import { anonymise, redactNote, ANONYMISATION_DISCLAIMER } from '@/lib/athleteUID'
 import AthleteDocumentsPanel, { useAthleteDocuments } from '@/components/AthleteDocumentsPanel'
-import EnableAthletePortal from '@/components/EnableAthletePortal'
-import { FlaskConical, Watch, Dumbbell, Eye } from 'lucide-react'
+import { FlaskConical, Watch, Dumbbell, Bandage } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+  RadarChart, Radar, PolarGrid, PolarAngleAxis,
   BarChart, Bar, CartesianGrid, Legend,
 } from 'recharts'
 import type { Report, ReportType } from '@/types'
@@ -33,13 +32,12 @@ const TABS = [
   { id: 'checkins',      label: 'Check-ins',      icon: Activity },
   { id: 'assessments',   label: 'Assessments',    icon: Brain },
   { id: 'interventions', label: 'Interventions',  icon: Target },
-  { id: 'injury',        label: 'Injury Psychology', icon: Heart },
-  { id: 'consent',       label: 'Consent Forms',  icon: Shield },
   { id: 'reports',       label: 'Reports',        icon: FileText },
   { id: 'documents',     label: 'Documents',      icon: Folder },
+  { id: 'injury',        label: 'Injury Psychology',  icon: Bandage },
+  { id: 'daily_logs',    label: 'Daily Logs',         icon: BookOpen },
   { id: 'physio',        label: 'Physio & Wearables', icon: Activity },
   { id: 'lab',           label: 'Lab Technology',  icon: FlaskConical },
-  { id: 'neuro',         label: 'Neurocognitive',  icon: Eye },
   { id: 'profiling',     label: 'Performance Profile', icon: Target },
   { id: 'ai',            label: 'AI Summary',     icon: Sparkles },
 ] as const
@@ -47,24 +45,6 @@ const TABS = [
 type TabId = typeof TABS[number]['id']  // includes 'documents'
 
 // ── Hooks ─────────────────────────────────────────────────────────────────────
-
-function useAthleteNeuro(athleteId?: string) {
-  const { user } = useAuth()
-  return useQuery({
-    queryKey: ['neuro', user?.id, athleteId],
-    enabled: !!user && !!athleteId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('neurocognitive')
-        .select('*, athlete:athletes(first_name,last_name,sport)')
-        .eq('practitioner_id', user!.id)
-        .eq('athlete_id', athleteId!)
-        .order('created_at', { ascending: false })
-      if (error) return []
-      return data ?? []
-    },
-  })
-}
 
 function useAthletePhysio(athleteId?: string) {
   const { user } = useAuth()
@@ -120,23 +100,6 @@ function useAthletePerfProfiles(athleteId?: string) {
   })
 }
 
-function useAthleteConsent(athleteId?: string) {
-  const { user } = useAuth()
-  return useQuery({
-    queryKey: ['consent_forms', user?.id, athleteId],
-    enabled: !!user && !!athleteId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('consent_forms')
-        .select('*')
-        .eq('practitioner_id', user!.id)
-        .eq('athlete_id', athleteId!)
-        .order('created_at', { ascending: false })
-      if (error) return []
-      return data ?? []
-    },
-  })
-}
 
 function useAthleteInjuries(athleteId?: string) {
   const { user } = useAuth()
@@ -330,13 +293,6 @@ function OverviewTab({ athlete, sessions, checkins, assessments, interventions, 
                 <p className="text-sm text-gray-700 leading-relaxed">{athlete.notes}</p>
               </div>
             )}
-
-            {/* Athlete Portal Access */}
-            <EnableAthletePortal
-              athleteId={athlete.id}
-              athleteFirstName={athlete.first_name}
-              athleteEmail={athlete.email}
-            />
           </div>
         </div>
       </div>
@@ -693,7 +649,6 @@ function AssessmentsTab({ assessments }: { assessments: any[] }) {
                   <ResponsiveContainer width="100%" height={150}>
                     <RadarChart data={radarData}>
                       <PolarGrid />
-                      <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
                       <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9 }} />
                       <Radar dataKey="value" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.2} />
                       <Tooltip />
@@ -940,7 +895,7 @@ function ReportsTab({ reports, athlete }: { reports: any[]; athlete: any }) {
 
 // ── Tab: AI Summary ───────────────────────────────────────────────────────────
 
-function AISummaryTab({ athlete, sessions, checkins, assessments, interventions, reports, documents = [], physioRecords = [], labSessions = [], perfProfiles = [], neuroRecords = [], consentForms = [], injuryRecords = [], psychReadiness = [] }: any) {
+function AISummaryTab({ athlete, sessions, checkins, assessments, interventions, reports, documents = [], physioRecords = [], labSessions = [], perfProfiles = [], injuryRecords = [], psychReadiness = [] }: any) {
   const [summary, setSummary] = useState('')
   const [generating, setGenerating] = useState(false)
   const [status, setStatus] = useState('')
@@ -1005,29 +960,14 @@ function AISummaryTab({ athlete, sessions, checkins, assessments, interventions,
           `  - ${fmtDate(p.created_at)} [${p.domain_id.replace(/_/g,' ').toUpperCase()}]: ${Object.entries(p.scores ?? {}).map(([k,v]) => `${k.replace(/_/g,' ')}=${v}/10`).join(' | ')}`
         ),
         ``,
-        neuroRecords.length > 0 ? `NEUROCOGNITIVE ASSESSMENTS (${neuroRecords.length} records):` : '',
-        ...neuroRecords.slice(0, 4).map((r: any) => {
-          const scores = r.senaptec_scores ?? {}
-          const senaptecSkillKeys = ['visual_clarity','contrast_sensitivity','near_far_quickness','target_capture','depth_sensitivity','perception_span','multiple_object_tracking','reaction_time','peripheral_reaction','go_no_go']
-          const vals = senaptecSkillKeys.map(k => scores[k]).filter((v): v is number => v != null)
-          const avg = vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null
-          const customSummary = r.custom_metrics?.filter((m: any) => m.name && m.value).slice(0, 4).map((m: any) => `${m.name}=${m.value}${m.unit}`).join(' | ')
-          return `  - ${r.platform} (${fmtDate(r.test_date ?? r.created_at)}) [${(r.context ?? '').replace(/_/g,' ')}]${avg != null ? ` avg=${avg}th %ile` : ''}${customSummary ? ` | ${customSummary}` : ''}${r.notes ? ` | Notes: ${r.notes.slice(0, 100)}` : ''}`
+        injuryRecords.length > 0 ? `INJURY PSYCHOLOGY (${injuryRecords.length} injuries):` : '',
+        ...injuryRecords.slice(0, 6).map((r: any) => {
+          const osiics = r.osiics_code_1 ? `${r.osiics_code_1} ${r.osiics_diagnosis_1 ?? ''}` : r.diagnosis_text
+          return `  - ${r.date_of_injury} [${r.severity?.toUpperCase()} · ${r.status}] ${osiics} | Context: ${r.context} | Missed: ${r.missed_days ?? 0}d/${r.missed_matches ?? 0} matches | Psych referral: ${r.psych_referral_needed ? 'YES' : 'no'}${r.notes ? ` | ${r.notes.slice(0, 100)}` : ''}`
         }),
-        ``,
-        consentForms.length > 0 ? `CONSENT FORMS (${consentForms.length} forms):` : '',
-        ...consentForms.map((c: any) =>
-          `  - ${c.form_type.replace(/_/g, ' ').toUpperCase()} | Status: ${c.status} | Signed by: ${c.signed_by || '—'}${c.signed_at ? ` on ${fmtDate(c.signed_at)}` : ''}${c.valid_until ? ` | Valid until: ${fmtDate(c.valid_until)}` : ''}${c.guardian_name ? ` | Guardian: ${c.guardian_name} (${c.guardian_relationship})` : ''}${c.notes ? ` | Notes: ${c.notes.slice(0, 100)}` : ''}`
-        ),
-        ``,
-        injuryRecords.length > 0 ? `INJURY RECORDS (${injuryRecords.length} injuries):` : '',
-        ...injuryRecords.map((inj: any) =>
-          `  - ${fmtDate(inj.date_of_injury)} [${inj.severity.toUpperCase()}/${inj.status}]: ${inj.diagnosis_text}${inj.osiics_code_1 ? ` (OSIICS: ${inj.osiics_code_1})` : ''} | Mechanism: ${inj.mechanism} | Context: ${inj.context}${inj.missed_days ? ` | ${inj.missed_days} days missed` : ''}${inj.missed_matches ? `, ${inj.missed_matches} matches missed` : ''}${inj.date_of_return ? ` | Returned: ${fmtDate(inj.date_of_return)}` : ' | Not yet returned'}${inj.psych_referral_needed ? ' | ⚠ Psych referral needed' : ''}${inj.notes ? ` | ${inj.notes.slice(0, 100)}` : ''}`
-        ),
-        ``,
-        psychReadiness.length > 0 ? `PSYCHOLOGICAL READINESS TO RETURN (${psychReadiness.length} assessments):` : '',
-        ...psychReadiness.map((pr: any) =>
-          `  - ${fmtDate(pr.assessed_at)}: ACL-RSI Total=${pr.acl_rsi_total} | TSK Total=${pr.tsk_total} | SIRSI Total=${pr.sirsi_total} | Overall Readiness=${pr.overall_readiness}% | Ready: ${pr.ready_to_return ? 'YES' : 'NO'}${pr.notes ? ` | ${pr.notes.slice(0, 100)}` : ''}`
+        psychReadiness.length > 0 ? `PSYCHOLOGICAL READINESS ASSESSMENTS (${psychReadiness.length}):` : '',
+        ...psychReadiness.slice(0, 4).map((r: any) =>
+          `  - ${r.assessed_at.slice(0,10)} | Overall readiness: ${r.overall_readiness}/100 | RTP cleared: ${r.ready_to_return ? 'YES' : 'NO'} | ACL-RSI: ${r.acl_psych_total ?? '—'} | SFK: ${r.sfk_total ?? '—'} | TFSI-R: ${r.tfsi_r_total ?? '—'}`
         ),
         ``,
         documents.length > 0 ? `UPLOADED DOCUMENTS (${documents.length} total):` : '',
@@ -1069,12 +1009,6 @@ Evaluate interventions used and their outcomes.
 
 ## Clinical Formulation
 Integrate findings into a coherent formulation (predisposing, precipitating, perpetuating, protective factors).
-
-## Injury Psychology & Return-to-Sport Readiness
-If injury data exists, analyse psychological impact, readiness scores, and return-to-sport status.
-
-## Consent & Compliance Status
-Summarise consent form coverage and any gaps.
 
 ## Recommendations & Next Steps
 Concrete, prioritised clinical recommendations.
@@ -1184,9 +1118,7 @@ export default function CaseFormulationPage() {
   const { data: physioRecords = [] } = useAthletePhysio(athleteId)
   const { data: labSessions = [] }   = useAthleteLabSessions(athleteId)
   const { data: perfProfiles = [] }  = useAthletePerfProfiles(athleteId)
-  const { data: neuroRecords = [] }  = useAthleteNeuro(athleteId)
-  const { data: consentForms = [] }  = useAthleteConsent(athleteId)
-  const { data: injuryRecords = [] } = useAthleteInjuries(athleteId)
+  const { data: injuryRecords = [] }  = useAthleteInjuries(athleteId)
   const { data: psychReadiness = [] } = useAthletePsychReadiness(athleteId)
 
   const athlete = athletes.find(a => a.id === athleteId)
@@ -1199,483 +1131,592 @@ export default function CaseFormulationPage() {
   function generateComprehensivePDF() {
     if (!athlete) return
 
-    const now  = new Date()
-    const anon = anonymise(athlete)
+    const now   = new Date()
+    const anon  = anonymise(athlete)
     const fullName = `${athlete.first_name} ${athlete.last_name}`
+    const flagged  = checkins.filter((c: any) => c.flags?.length > 0)
+    const completed = sessions.filter((s: any) => s.status === 'completed').length
 
-    // ── Computed aggregates ──────────────────────────────────────────────────
-    const completed   = sessions.filter((s: any) => s.status === 'completed').length
-    const flagged     = checkins.filter((c: any) => c.flags?.length > 0)
-    const avg = (arr: any[], key: string) =>
-      arr.length ? (arr.reduce((s: number, r: any) => s + (r[key] ?? 0), 0) / arr.length).toFixed(1) : '—'
-    const avgMood    = avg(checkins, 'mood_score')
-    const avgStress  = avg(checkins, 'stress_score')
-    const avgSleep   = avg(checkins, 'sleep_score')
-    const avgReady   = avg(checkins, 'readiness_score')
-    const avgHRV     = physioRecords.filter((r: any) => r.hrv?.rmssd).length
-      ? (physioRecords.reduce((s: number, r: any) => s + (r.hrv?.rmssd ?? 0), 0) /
-         physioRecords.filter((r: any) => r.hrv?.rmssd).length).toFixed(0) : '—'
-    const avgRHR     = physioRecords.filter((r: any) => r.vitals?.rhr).length
-      ? (physioRecords.reduce((s: number, r: any) => s + (r.vitals?.rhr ?? 0), 0) /
-         physioRecords.filter((r: any) => r.vitals?.rhr).length).toFixed(0) : '—'
-    const avgRecovery = physioRecords.filter((r: any) => r.wearable_data?.recovery_score).length
-      ? (physioRecords.reduce((s: number, r: any) => s + (r.wearable_data?.recovery_score ?? 0), 0) /
-         physioRecords.filter((r: any) => r.wearable_data?.recovery_score).length).toFixed(0) : '—'
+    const avgMood   = checkins.length ? (checkins.reduce((a: number,c: any)=>a+c.mood_score,0)/checkins.length).toFixed(1) : '—'
+    const avgStress = checkins.length ? (checkins.reduce((a: number,c: any)=>a+c.stress_score,0)/checkins.length).toFixed(1) : '—'
+    const avgSleep  = checkins.length ? (checkins.reduce((a: number,c: any)=>a+c.sleep_score,0)/checkins.length).toFixed(1) : '—'
+    const avgReady  = checkins.length ? (checkins.reduce((a: number,c: any)=>a+c.readiness_score,0)/checkins.length).toFixed(1) : '—'
 
-    const riskBg  = ({ low:'#16a34a', moderate:'#d97706', high:'#dc2626', critical:'#7f1d1d' } as any)[athlete.risk_level] ?? '#6b7280'
-    const scoreCol = (v: number) => v >= 7 ? '#16a34a' : v >= 5 ? '#d97706' : '#dc2626'
-    const bar = (pct: number, col: string, h = '7px') =>
-      `<div style="height:${h};background:#e5e7eb;border-radius:4px;overflow:hidden;margin-top:3px">
-        <div style="height:100%;width:${Math.min(pct,100)}%;background:${col};border-radius:4px"></div></div>`
+    const riskColMap: Record<string,string> = { low:'#22c55e', moderate:'#f59e0b', high:'#ef4444', critical:'#7f1d1d' }
+    const riskBgMap:  Record<string,string> = { low:'#dcfce7', moderate:'#fef3c7', high:'#fee2e2', critical:'#fecaca' }
 
-    // ── Section header helper ──────────────────────────────────────────────────
-    const sec = (emoji: string, title: string, pill: string, accent = '#1A2D4A') =>
-      `<div style="display:flex;align-items:center;gap:10px;margin:28px 0 14px;padding-bottom:8px;border-bottom:2px solid ${accent}20">
-        <div style="width:28px;height:28px;border-radius:7px;background:${accent}14;display:flex;align-items:center;justify-content:center;font-size:14px">${emoji}</div>
-        <span style="font-size:14px;font-weight:800;color:${accent};flex:1">${title}</span>
-        <span style="font-size:10px;font-weight:700;background:${accent}18;color:${accent};padding:2px 10px;border-radius:999px">${pill}</span>
+    // ── Inline SVG helpers ────────────────────────────────────────────────────
+    function svgBar(pct: number, color: string, h = 6): string {
+      const w = Math.max(0, Math.min(100, pct))
+      return `<div style="background:#e5e7eb;border-radius:3px;height:${h}px;overflow:hidden;flex:1">
+        <div style="height:100%;width:${w}%;background:${color};border-radius:3px;transition:width .3s"></div></div>`
+    }
+    function scoreChip(val: number, max: number, color: string): string {
+      return `<span style="font-weight:800;font-size:16px;color:${color}">${val}</span><span style="font-size:10px;color:#9ca3af;font-weight:400">/${max}</span>`
+    }
+    function trafficLight(val: number, goodAbove = 7): string {
+      return val >= goodAbove ? '#22c55e' : val >= 5 ? '#f59e0b' : '#ef4444'
+    }
+    function hexagon(label: string, val: number, color: string): string {
+      const pct = (val / 10) * 100
+      return `<div style="text-align:center;min-width:70px">
+        <div style="position:relative;display:inline-flex;align-items:center;justify-content:center;width:52px;height:52px;
+          background:conic-gradient(${color} 0% ${pct}%,#e5e7eb ${pct}% 100%);border-radius:50%;margin-bottom:4px">
+          <div style="width:38px;height:38px;background:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;
+            font-size:14px;font-weight:800;color:${color}">${val}</div></div>
+        <div style="font-size:9px;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;max-width:70px;line-height:1.2">${label}</div>
       </div>`
+    }
 
-    // ── CSS ─────────────────────────────────────────────────────────────────
+    // ── CSS ───────────────────────────────────────────────────────────────────
     const css = `
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
       *{box-sizing:border-box;margin:0;padding:0}
-      body{font-family:'Segoe UI',Arial,sans-serif;color:#1e293b;background:#f8fafc;font-size:12.5px;line-height:1.6;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-      .page{max-width:920px;margin:0 auto;background:#fff}
-      /* Cover */
-      .cover{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 60%,#0f172a 100%);padding:44px 48px 36px;position:relative;overflow:hidden}
-      .cover::before{content:'';position:absolute;top:-80px;right:-60px;width:320px;height:320px;background:radial-gradient(circle,#3b82f620 0%,transparent 70%);pointer-events:none}
-      .cover-brand{font-size:11px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:#94a3b8;margin-bottom:28px;display:flex;align-items:center;gap:8px}
-      .cover-brand-dot{width:6px;height:6px;border-radius:50%;background:#3DDC84}
-      .cover-uid{font-family:monospace;font-size:38px;font-weight:900;color:#fff;letter-spacing:.08em;line-height:1;margin-bottom:10px}
-      .cover-meta{font-size:13px;color:#94a3b8;margin-bottom:18px}
-      .cover-risk{display:inline-block;font-size:11px;font-weight:700;padding:4px 14px;border-radius:999px;color:#fff;margin-right:8px}
-      .cover-status{display:inline-block;font-size:11px;font-weight:700;padding:4px 14px;border-radius:999px;background:#ffffff20;color:#fff}
-      .cover-right{text-align:right;color:#64748b;font-size:10.5px;line-height:1.7}
-      .cover-right strong{color:#94a3b8;display:block;font-size:13px;font-weight:700;margin-bottom:4px}
-      /* Stats strip */
-      .stats-strip{background:#0f172a;padding:18px 48px;display:grid;grid-template-columns:repeat(8,1fr);gap:0}
-      .stat-cell{text-align:center;padding:6px 0;border-right:1px solid #ffffff12}
+      body{font-family:Inter,'Segoe UI',Arial,sans-serif;color:#111827;background:#f8fafc;font-size:12px;line-height:1.6}
+      .page{max-width:960px;margin:0 auto;padding:0 0 40px}
+
+      /* ── Cover band ── */
+      .cover{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 60%,#1A2D4A 100%);padding:36px 48px 32px;color:#fff;position:relative;overflow:hidden}
+      .cover::before{content:'';position:absolute;top:-60px;right:-60px;width:280px;height:280px;
+        background:radial-gradient(circle,rgba(45,125,210,.25) 0%,transparent 70%);border-radius:50%}
+      .cover::after{content:'';position:absolute;bottom:-40px;left:100px;width:180px;height:180px;
+        background:radial-gradient(circle,rgba(61,220,132,.12) 0%,transparent 70%);border-radius:50%}
+      .cover-brand{display:flex;align-items:center;gap:14px;margin-bottom:28px}
+      .cover-logo{width:48px;height:48px;border-radius:12px;background:rgba(255,255,255,.12);
+        border:1.5px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;
+        font-size:26px;font-weight:900;color:#3DDC84;backdrop-filter:blur(4px)}
+      .cover-title{font-size:22px;font-weight:900;letter-spacing:.02em}
+      .cover-title .mind{color:#3DDC84}
+      .cover-sub{font-size:10px;color:rgba(255,255,255,.5);letter-spacing:.12em;text-transform:uppercase;margin-top:2px}
+      .cover-uid-label{font-size:10px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px}
+      .cover-uid{font-family:monospace;font-size:32px;font-weight:900;letter-spacing:.08em;color:#fff;margin-bottom:10px}
+      .cover-meta{font-size:12px;color:rgba(255,255,255,.7);margin-bottom:16px;display:flex;gap:16px;flex-wrap:wrap}
+      .cover-badge{display:inline-block;font-size:10px;font-weight:700;padding:3px 10px;border-radius:999px;letter-spacing:.03em}
+      .cover-right{text-align:right;font-size:10px;color:rgba(255,255,255,.4);line-height:1.8;position:relative;z-index:1}
+      .cover-right strong{color:rgba(255,255,255,.8);font-size:11px}
+      .cover-confidential{font-size:10px;font-weight:700;color:#fca5a5;letter-spacing:.08em;text-transform:uppercase;
+        background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);border-radius:4px;padding:2px 8px;display:inline-block;margin-top:6px}
+      .anon-notice{font-size:9.5px;color:rgba(255,255,255,.45);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+        border-radius:6px;padding:8px 12px;margin-top:16px;line-height:1.6;max-width:600px}
+
+      /* ── Stats strip ── */
+      .stats-strip{display:grid;grid-template-columns:repeat(8,1fr);background:#1A2D4A;padding:0}
+      .stat-cell{padding:14px 8px;text-align:center;border-right:1px solid rgba(255,255,255,.08)}
       .stat-cell:last-child{border-right:none}
       .stat-num{font-size:22px;font-weight:900;color:#fff;line-height:1}
-      .stat-lbl{font-size:8.5px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-top:3px}
-      /* Body */
-      .body{padding:0 48px 48px}
-      /* Cards */
-      .card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;margin-bottom:8px}
-      .card-dark{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:12px 16px;margin-bottom:8px}
-      /* Tables */
-      table{width:100%;border-collapse:collapse;font-size:11px}
-      th{background:#f1f5f9;padding:7px 9px;font-weight:700;color:#475569;border-bottom:1px solid #e2e8f0;font-size:10px;text-transform:uppercase;letter-spacing:.05em;text-align:left}
-      td{padding:7px 9px;border-bottom:1px solid #f1f5f9;color:#334155;vertical-align:top}
-      tr:nth-child(even) td{background:#f8fafc}
-      /* Metric cells */
-      .metric-grid{display:grid;gap:8px;margin-bottom:14px}
-      .metric-cell{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 14px;text-align:center}
-      .metric-val{font-size:24px;font-weight:900;line-height:1;margin-bottom:2px}
-      .metric-lbl{font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.07em}
-      /* Bars */
-      .bar-row{margin-bottom:6px}
-      .bar-label{display:flex;justify-content:space-between;font-size:11px;color:#475569;margin-bottom:3px}
-      .bar-track{height:7px;background:#e2e8f0;border-radius:4px;overflow:hidden}
-      .bar-fill{height:100%;border-radius:4px}
-      /* Alerts */
-      .alert-red{background:#fef2f2;border-left:4px solid #ef4444;border-radius:0 8px 8px 0;padding:10px 14px;margin-bottom:16px;font-size:11.5px;color:#991b1b}
-      .alert-amber{background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:8px;font-size:11px;color:#92400e}
-      .finding-row{border-left:3px solid #3b82f6;padding:4px 10px;margin-bottom:4px;font-size:11px;color:#1e40af;background:#eff6ff;border-radius:0 6px 6px 0}
-      /* Confidence badge */
-      .conf-high{background:#dcfce7;color:#15803d;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px}
-      .conf-med{background:#fef9c3;color:#854d0e;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px}
-      .conf-low{background:#fee2e2;color:#991b1b;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px}
-      /* Lab */
-      .tech-chip{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;background:#eff6ff;color:#1d4ed8}
-      .consent-yes{font-size:9px;background:#dcfce7;color:#15803d;padding:1px 7px;border-radius:999px;font-weight:700}
-      .consent-no{font-size:9px;background:#fef9c3;color:#92400e;padding:1px 7px;border-radius:999px;font-weight:700}
-      /* Footer */
-      .footer-strip{background:#0f172a;padding:20px 48px;display:flex;align-items:center;justify-content:space-between;margin-top:32px}
-      .footer-brand{font-size:13px;font-weight:800;color:#fff;letter-spacing:.03em}
-      .footer-sub{font-size:10px;color:#475569;margin-top:2px}
-      .footer-anon{font-size:10px;color:#475569;text-align:right}
-      /* Print */
-      @media print{body{font-size:11px}.body{padding:0 32px 32px}.stats-strip{padding:14px 32px}.cover{padding:32px}.no-break{page-break-inside:avoid}}
+      .stat-lbl{font-size:8.5px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:.07em;margin-top:3px}
+
+      /* ── Body ── */
+      .body{padding:28px 48px}
+
+      /* ── Section ── */
+      .section{margin-bottom:32px}
+      .sec-head{display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e5e7eb}
+      .sec-icon{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+      .sec-title{font-size:14px;font-weight:800;color:#0f172a;letter-spacing:-.01em}
+      .sec-pill{margin-left:auto;font-size:10px;font-weight:600;padding:2px 10px;border-radius:999px;background:#e0f2fe;color:#0369a1}
+
+      /* ── Cards ── */
+      .card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 16px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+      .card.flagged{border-color:#fbbf24;background:#fffbeb}
+      .card.danger{border-color:#fca5a5;background:#fef2f2}
+      .card.success{border-color:#86efac;background:#f0fdf4}
+      .card.info{border-color:#93c5fd;background:#eff6ff}
+
+      /* ── Metric grids ── */
+      .metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+      .metric-grid-5{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:14px}
+      .metric-cell{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:10px 12px;text-align:center;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+      .metric-val{font-size:22px;font-weight:900;line-height:1;margin-bottom:2px}
+      .metric-lbl{font-size:9px;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em}
+      .metric-sub{font-size:10px;color:#6b7280;margin-top:2px}
+
+      /* ── Tables ── */
+      table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:6px}
+      th{background:#f1f5f9;text-align:left;padding:7px 10px;font-weight:700;color:#475569;border-bottom:1.5px solid #e2e8f0;font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+      td{padding:7px 10px;border-bottom:1px solid #f1f5f9;color:#374151;vertical-align:middle}
+      tr:last-child td{border-bottom:none}
+      tr:nth-child(even) td{background:#fafafa}
+      tr:hover td{background:#f8fafc}
+
+      /* ── Bars ── */
+      .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+      .bar-name{font-size:11px;color:#374151;width:140px;flex-shrink:0;font-weight:500}
+      .bar-val{font-size:11px;font-weight:700;width:32px;text-align:right;flex-shrink:0}
+
+      /* ── Profile rings ── */
+      .ring-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}
+
+      /* ── Alert banners ── */
+      .alert-high{background:#fef2f2;border:1.5px solid #fca5a5;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:#7f1d1d}
+      .alert-warn{background:#fffbeb;border:1.5px solid #fbbf24;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:11px;color:#92400e}
+
+      /* ── Two-col layout ── */
+      .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+      /* ── Tags / chips ── */
+      .chip{display:inline-block;font-size:9.5px;font-weight:600;padding:2px 8px;border-radius:999px;margin-right:4px;margin-bottom:3px}
+      .chip-blue{background:#dbeafe;color:#1d4ed8}
+      .chip-green{background:#dcfce7;color:#15803d}
+      .chip-amber{background:#fef3c7;color:#92400e}
+      .chip-red{background:#fee2e2;color:#991b1b}
+      .chip-purple{background:#ede9fe;color:#6d28d9}
+      .chip-gray{background:#f3f4f6;color:#4b5563}
+
+      /* ── HRV / wearable summary ── */
+      .hrv-cell{background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:10px;text-align:center}
+      .hrv-val{font-size:20px;font-weight:900;color:#7c3aed}
+      .hrv-lbl{font-size:9px;color:#9ca3af;text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
+
+      /* ── Footer ── */
+      .footer{margin-top:40px;padding:14px 48px;background:#f1f5f9;border-top:1px solid #e2e8f0;
+        display:flex;justify-content:space-between;font-size:9.5px;color:#9ca3af}
+      .footer strong{color:#64748b}
+
+      @media print{
+        body{background:#fff;font-size:11px}
+        .page{max-width:100%}
+        .body{padding:20px 32px}
+        .cover{padding:24px 32px}
+        .no-break{page-break-inside:avoid}
+        .stats-strip .stat-num{font-size:18px}
+      }
     `
 
-    // ── Cover ────────────────────────────────────────────────────────────────
+    // ── COVER ─────────────────────────────────────────────────────────────────
+    const riskC  = riskColMap[anon.risk_level] ?? '#6b7280'
+    const riskBg = riskBgMap[anon.risk_level]  ?? '#f3f4f6'
     const cover = `
-      <div class="cover">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start">
-          <div>
-            <div class="cover-brand"><div class="cover-brand-dot"></div>WINMINDPERFORM · SPPS</div>
-            <div class="cover-uid">${anon.uid_code}</div>
-            <div class="cover-meta">${anon.sport} · ${anon.age_group}</div>
-            <span class="cover-risk" style="background:${riskBg}">${anon.risk_level.toUpperCase()} RISK</span>
-            <span class="cover-status">${anon.status.replace('_',' ').toUpperCase()}</span>
+    <div class="cover">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:1">
+        <div>
+          <div class="cover-brand">
+            <div class="cover-logo">W</div>
+            <div>
+              <div class="cover-title">WIN<span class="mind">MIND</span>PERFORM</div>
+              <div class="cover-sub">Sport Psychology Practitioner Suite · SPPS</div>
+            </div>
           </div>
-          <div class="cover-right">
-            <strong>Full Case Formulation Report</strong>
-            Generated: ${now.toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'})}<br>
-            <span style="color:#ef4444;font-weight:700;font-size:11px">CONFIDENTIAL · CLINICAL USE ONLY</span><br>
-            <span style="color:#374151;font-size:10px">DPDP Act 2023 · Anonymised — UID only</span>
+          <div class="cover-uid-label">Athlete Reference (anonymised)</div>
+          <div class="cover-uid">${anon.uid_code}</div>
+          <div class="cover-meta">
+            <span>🏆 ${anon.sport}</span>
+            <span>👤 ${anon.age_group}</span>
+          </div>
+          <span class="cover-badge" style="background:${riskBg};color:${riskC};margin-right:6px">${anon.risk_level.toUpperCase()} RISK</span>
+          <span class="cover-badge" style="background:rgba(34,197,94,.15);color:#86efac">${anon.status.replace('_',' ').toUpperCase()}</span>
+          <div class="anon-notice">
+            ⚠ This document is anonymised in accordance with DPDP Act 2023. The athlete is identified by UID code only.
+            No name, DOB, or contact details are included. Identity is resolvable only by the authorised practitioner via the SPPS platform.
           </div>
         </div>
-      </div>`
-
-    // ── Stats strip ──────────────────────────────────────────────────────────
-    const statsStrip = `
-      <div class="stats-strip">
-        ${[
-          [sessions.length,   'Sessions'],
-          [checkins.length,   'Check-ins'],
-          [assessments.length,'Assessments'],
-          [interventions.length,'Interventions'],
-          [documents.length,  'Documents'],
-          [physioRecords.length,'Physio'],
-          [labSessions.length, 'Lab'],
-          [perfProfiles.length,'Profiles'],
-        ].map(([n,l]) =>
-          `<div class="stat-cell"><div class="stat-num">${n}</div><div class="stat-lbl">${l}</div></div>`
-        ).join('')}
-      </div>`
-
-    // ── Risk alert ───────────────────────────────────────────────────────────
-    const riskAlert = (anon.risk_level === 'high' || anon.risk_level === 'critical')
-      ? `<div class="alert-red">⚠ <strong>Elevated Risk:</strong> UID <strong>${anon.uid_code}</strong> is flagged as <strong>${anon.risk_level.toUpperCase()}</strong>. Ensure crisis protocols are active and regular monitoring is in place.</div>`
-      : ''
-
-    // ── Sessions ─────────────────────────────────────────────────────────────
-    const sessHtml = sessions.length === 0
-      ? '<p style="color:#94a3b8;font-size:12px;padding:12px 0">No sessions recorded.</p>'
-      : `<table><thead><tr><th>Date</th><th>Type</th><th>Status</th><th>Min</th><th>Risk</th><th>Notes / Goals</th></tr></thead>
-        <tbody>${sessions.map((s: any) => `<tr>
-          <td style="white-space:nowrap">${fmtDate(s.scheduled_at)}</td>
-          <td>${s.session_type.replace(/_/g,' ')}</td>
-          <td><span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;background:${s.status==='completed'?'#dcfce7':'#f1f5f9'};color:${s.status==='completed'?'#15803d':'#475569'}">${s.status.replace('_',' ')}</span></td>
-          <td>${s.duration_minutes ?? '—'}</td>
-          <td>${s.risk_assessment ?? '—'}</td>
-          <td style="max-width:200px;font-size:11px">${[s.notes ? redactNote(s.notes, fullName).slice(0,160) : '', s.goals ? 'Goals: ' + redactNote(s.goals, fullName) : ''].filter(Boolean).join(' | ') || '—'}</td>
-        </tr>`).join('')}</tbody></table>
-        <p style="font-size:11px;color:#64748b;margin-top:6px">${completed} of ${sessions.length} sessions completed</p>`
-
-    // ── Check-ins ────────────────────────────────────────────────────────────
-    const chkMetrics = `<div class="metric-grid" style="grid-template-columns:repeat(5,1fr)">
+        <div class="cover-right">
+          <div><strong>Full Case Formulation Report</strong></div>
+          <div>Generated: ${now.toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'})}</div>
+          <div style="margin-top:4px">${now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>
+          <div class="cover-confidential">CONFIDENTIAL — CLINICAL USE ONLY</div>
+        </div>
+      </div>
+    </div>
+    <div class="stats-strip">
       ${[
-        ['Mood', avgMood, '#3b82f6', parseFloat(avgMood)*10],
-        ['Stress', avgStress, '#ef4444', parseFloat(avgStress)*10],
-        ['Sleep', avgSleep, '#f59e0b', parseFloat(avgSleep)*10],
-        ['Readiness', avgReady, '#10b981', parseFloat(avgReady)*10],
-        ['Flagged', String(flagged.length), '#ef4444', flagged.length/Math.max(checkins.length,1)*100],
-      ].map(([l, v, c, p]) => `
-        <div class="metric-cell">
-          <div class="metric-val" style="color:${c}">${v}</div>
-          <div class="metric-lbl">${l}</div>
-          ${bar(p as number, c as string)}
-        </div>`).join('')}
+        ['Sessions', sessions.length],
+        ['Check-ins', checkins.length],
+        ['Assessments', assessments.length],
+        ['Interventions', interventions.length],
+        ['Documents', documents.length],
+        ['Injuries', injuryRecords.length],
+        ['Physio', physioRecords.length],
+        ['Lab', labSessions.length],
+        ['Profiles', perfProfiles.length],
+      ].map(([l,v])=>`<div class="stat-cell"><div class="stat-num">${v}</div><div class="stat-lbl">${l}</div></div>`).join('')}
     </div>`
 
-    const chkHtml = checkins.length === 0
-      ? '<p style="color:#94a3b8;font-size:12px;padding:12px 0">No check-ins recorded.</p>'
-      : `${chkMetrics}
-        ${flagged.length > 0 ? `<div class="alert-amber">⚠ ${flagged.length} check-in${flagged.length>1?'s':''} flagged: ${[...new Set(flagged.flatMap((c: any) => c.flags ?? []))].join(', ')}</div>` : ''}
-        <table><thead><tr><th>Date</th><th>Mood</th><th>Stress</th><th>Sleep</th><th>Motivation</th><th>Readiness</th><th>Flags</th><th>Notes</th></tr></thead>
-        <tbody>${checkins.map((c: any) => `<tr>
-          <td style="white-space:nowrap;font-size:10px">${fmtDate(c.checked_in_at)}</td>
-          <td><strong style="color:${scoreCol(c.mood_score)}">${c.mood_score}</strong></td>
-          <td><strong style="color:${scoreCol(10-c.stress_score)}">${c.stress_score}</strong></td>
-          <td><strong style="color:${scoreCol(c.sleep_score)}">${c.sleep_score}</strong></td>
-          <td>${c.motivation_score ?? '—'}</td>
-          <td><strong style="color:${scoreCol(c.readiness_score)}">${c.readiness_score}</strong></td>
-          <td style="font-size:10px;color:#dc2626">${c.flags?.join(', ') || '—'}</td>
-          <td style="font-size:10px;max-width:160px">${c.notes ? redactNote(c.notes, fullName).slice(0,100) : '—'}</td>
-        </tr>`).join('')}</tbody></table>`
+    // ── Risk alert ────────────────────────────────────────────────────────────
+    const riskAlert = (anon.risk_level==='high'||anon.risk_level==='critical')
+      ? `<div class="alert-high no-break">⚠ <strong>Elevated Risk — ${anon.risk_level.toUpperCase()}:</strong>
+          This athlete is flagged as ${anon.risk_level} risk. Ensure crisis protocols are active and documentation is current.</div>`
+      : ''
 
-    // ── Assessments ──────────────────────────────────────────────────────────
-    const asmHtml = assessments.length === 0
-      ? '<p style="color:#94a3b8;font-size:12px;padding:12px 0">No assessments administered.</p>'
-      : assessments.map((a: any) => {
-          const isExt = String(a.tool).startsWith('EXTERNAL:')
-          const tname = isExt ? String(a.tool).replace('EXTERNAL:','') : a.tool
-          const maxSub = Math.max(...Object.values(a.scores ?? {}).map(v => v as number), 1)
-          const bars = Object.entries(a.scores ?? {}).map(([n, v]) => {
-            const num = v as number
-            const pct = Math.min(Math.round(num / maxSub * 100), 100)
-            const col = pct >= 70 ? '#16a34a' : pct >= 40 ? '#d97706' : '#dc2626'
-            return `<div class="bar-row">
-              <div class="bar-label"><span>${n}</span><span style="font-weight:800;color:${col}">${num}</span></div>
-              <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div>
-            </div>`
-          }).join('')
-          return `<div class="card no-break" style="margin-bottom:12px">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-              <div style="display:flex;align-items:center;gap:8px">
-                <span class="tech-chip">${tname}</span>
-                ${isExt ? '<span style="font-size:10px;background:#f1f5f9;color:#64748b;padding:1px 6px;border-radius:4px">Offline</span>' : ''}
-                <span style="font-size:11px;color:#94a3b8">${fmtDate(a.administered_at)}</span>
-              </div>
-              <div style="text-align:right">
-                <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.07em">Total Score</div>
-                <div style="font-size:26px;font-weight:900;color:#1A2D4A;line-height:1">${a.total_score}</div>
-              </div>
-            </div>
-            ${bars}
-            ${a.notes ? `<div style="margin-top:8px;font-size:11px;color:#374151;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:7px 10px">📝 ${redactNote(a.notes, fullName).slice(0,200)}</div>` : ''}
-          </div>`
-        }).join('')
-
-    // ── Interventions ────────────────────────────────────────────────────────
-    const byCat: Record<string,any[]> = {}
-    interventions.forEach((i: any) => { if(!byCat[i.category]) byCat[i.category]=[]; byCat[i.category].push(i) })
-    const intHtml = interventions.length === 0
-      ? '<p style="color:#94a3b8;font-size:12px;padding:12px 0">No interventions logged.</p>'
-      : Object.entries(byCat).map(([cat, list]) => `
-        <div style="margin-bottom:14px">
-          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#94a3b8;margin-bottom:8px;padding:4px 0;border-bottom:1px solid #f1f5f9">${cat.replace(/_/g,' ')} · ${list.length}</div>
-          ${list.map((i: any) => `<div class="card no-break" style="margin-bottom:6px">
-            <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px">
-              <div style="font-weight:700;font-size:12px;color:#1e293b">${i.title}</div>
-              ${i.rating ? `<div style="color:#f59e0b;font-size:13px">${'★'.repeat(i.rating)}${'☆'.repeat(5-i.rating)}</div>` : ''}
-            </div>
-            ${i.description ? `<div style="font-size:11px;color:#64748b;margin-bottom:4px">${redactNote(i.description, fullName).slice(0,200)}</div>` : ''}
-            ${i.outcome ? `<div style="font-size:11px;color:#059669;font-style:italic">→ Outcome: ${redactNote(i.outcome, fullName)}</div>` : ''}
-            <div style="font-size:10px;color:#cbd5e1;margin-top:4px">${fmtDate(i.created_at)}</div>
-          </div>`).join('')}
-        </div>`).join('')
-
-    // ── Reports ──────────────────────────────────────────────────────────────
-    const repHtml = reports.length === 0
-      ? '<p style="color:#94a3b8;font-size:12px;padding:12px 0">No reports generated.</p>'
-      : reports.map((r: any) => `<div class="card no-break" style="margin-bottom:8px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-            <div style="font-weight:700;font-size:12px;color:#1e293b">${r.title}</div>
-            <div style="font-size:10px;color:#94a3b8">${fmtDate(r.generated_at)}${r.is_ai_generated ? ' · AI' : ''}</div>
+    // ── SESSIONS ──────────────────────────────────────────────────────────────
+    const sessHtml = sessions.length===0
+      ? '<p style="color:#9ca3af;font-size:12px;padding:12px 0">No sessions recorded.</p>'
+      : `<div class="metric-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
+          <div class="metric-cell">
+            <div class="metric-val" style="color:#3b82f6">${sessions.length}</div>
+            <div class="metric-lbl">Total</div>
           </div>
-          <span style="font-size:10px;background:#eff6ff;color:#1d4ed8;padding:2px 8px;border-radius:4px;font-weight:600">${(r.report_type ?? 'custom').replace(/_/g,' ')}</span>
-          ${r.content ? `<div style="margin-top:8px;font-size:11px;color:#374151;line-height:1.6">${redactNote(r.content, fullName).slice(0,400)}${r.content.length > 400 ? '…' : ''}</div>` : ''}
-        </div>`).join('')
-
-    // ── Documents ────────────────────────────────────────────────────────────
-    const docsHtml = documents.length === 0 ? '' :
-      documents.map((d: any) => {
-        const conf = d.ai_confidence ?? 0
-        const confCls = conf >= 70 ? 'conf-high' : conf >= 40 ? 'conf-med' : 'conf-low'
-        const findings = Array.isArray(d.ai_key_findings) ? d.ai_key_findings : []
-        const flags    = Array.isArray(d.ai_flags) ? d.ai_flags : []
-        return `<div class="card no-break" style="margin-bottom:12px${flags.length ? ';border-color:#fbbf24' : ''}">
-          <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px">
-            <div>
-              <span style="font-size:10px;font-weight:700;background:#f1f5f9;color:#475569;padding:2px 8px;border-radius:4px;text-transform:uppercase;margin-right:6px">${String(d.document_category ?? 'other').replace(/_/g,' ')}</span>
-              <strong style="font-size:12px;color:#1e293b">${d.file_name}</strong>
-            </div>
-            <div style="display:flex;align-items:center;gap:6px">
-              <span class="${confCls}">${conf}% confidence</span>
-              <span style="font-size:10px;color:#94a3b8">${fmtDate(d.uploaded_at)}</span>
-            </div>
+          <div class="metric-cell">
+            <div class="metric-val" style="color:#22c55e">${completed}</div>
+            <div class="metric-lbl">Completed</div>
           </div>
-          ${d.ai_summary ? `<p style="font-size:11.5px;color:#334155;line-height:1.7;margin-bottom:8px">${d.ai_summary}</p>` : ''}
-          ${findings.length > 0 ? `<div style="margin-bottom:8px">${findings.map((f: string) => `<div class="finding-row">• ${f}</div>`).join('')}</div>` : ''}
-          ${flags.length > 0 ? `<div class="alert-amber">${flags.map((f: string) => `<div>⚠ ${f}</div>`).join('')}</div>` : ''}
-          ${d.ai_recommendations ? `<div style="font-size:11px;color:#1d4ed8;font-style:italic;margin-top:4px">→ ${d.ai_recommendations}</div>` : ''}
-          ${d.practitioner_notes ? `<div style="margin-top:6px;font-size:11px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:6px 10px;color:#374151">📋 ${d.practitioner_notes}</div>` : ''}
-        </div>`
-      }).join('')
+          <div class="metric-cell">
+            <div class="metric-val" style="color:#f59e0b">${sessions.filter((s:any)=>s.status==='scheduled').length}</div>
+            <div class="metric-lbl">Upcoming</div>
+          </div>
+        </div>
+        <table class="no-break">
+          <thead><tr><th>Date</th><th>Type</th><th>Status</th><th>Duration</th><th>Risk</th><th>Notes / Goals</th></tr></thead>
+          <tbody>${sessions.map((s:any)=>{
+            const statusColors: Record<string,string>={completed:'chip-green',cancelled:'chip-gray',no_show:'chip-red',scheduled:'chip-blue'}
+            return `<tr>
+              <td style="white-space:nowrap;font-weight:500">${fmtDate(s.scheduled_at)}</td>
+              <td>${s.session_type.replace(/_/g,' ')}</td>
+              <td><span class="chip ${statusColors[s.status]??'chip-gray'}">${s.status.replace('_',' ')}</span></td>
+              <td>${s.duration_minutes??'—'}min</td>
+              <td>${s.risk_assessment?`<span class="chip chip-${s.risk_assessment==='high'||s.risk_assessment==='critical'?'red':s.risk_assessment==='moderate'?'amber':'green'}">${s.risk_assessment}</span>`:'—'}</td>
+              <td style="max-width:200px;font-size:10.5px">${[s.notes?redactNote(s.notes,fullName).slice(0,150):'',s.goals?'Goals: '+redactNote(s.goals,fullName):'',s.homework?'HW: '+redactNote(s.homework,fullName):''].filter(Boolean).join(' | ')||'—'}</td>
+            </tr>`
+          }).join('')}</tbody>
+        </table>`
 
-    // ── Physio & Wearables ───────────────────────────────────────────────────
-    const physioHtml = physioRecords.length === 0 ? '' : (() => {
-      const physMetrics = `<div class="metric-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
-        ${[
-          ['Avg HRV', avgHRV + (avgHRV !== '—' ? ' ms' : ''), '#8b5cf6'],
-          ['Avg RHR', avgRHR + (avgRHR !== '—' ? ' bpm' : ''), '#ef4444'],
-          ['Avg Recovery', avgRecovery + (avgRecovery !== '—' ? '%' : ''), '#10b981'],
-          ['Records', String(physioRecords.length), '#3b82f6'],
-        ].map(([l, v, c]) => `
+    // ── CHECK-INS ─────────────────────────────────────────────────────────────
+    const scoreColor = (v: number) => v>=7?'#22c55e':v>=5?'#f59e0b':'#ef4444'
+    const chkHtml = checkins.length===0
+      ? '<p style="color:#9ca3af;font-size:12px;padding:12px 0">No check-ins recorded.</p>'
+      : `<div class="metric-grid-5">
+          ${[['Mood',avgMood,'#3b82f6'],['Stress',avgStress,'#ef4444'],['Sleep',avgSleep,'#f59e0b'],['Readiness',avgReady,'#10b981'],['Flagged',String(flagged.length),'#f43f5e']].map(([l,v,c])=>`
           <div class="metric-cell">
             <div class="metric-val" style="color:${c}">${v}</div>
             <div class="metric-lbl">${l}</div>
+            ${l!=='Flagged'&&v!=='—'?`<div style="margin-top:6px">${svgBar(parseFloat(v as string)*10,c as string,5)}</div>`:''}
           </div>`).join('')}
-      </div>`
-      const rows = physioRecords.slice(0, 20).map((r: any) => `<div class="card no-break" style="margin-bottom:6px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <span style="font-size:11px;font-weight:600;color:#1e293b">${fmtDate(r.created_at)} · ${(r.session_context ?? '—').replace(/_/g,' ')}</span>
-          ${r.device_used ? `<span style="font-size:10px;background:#f1f5f9;color:#475569;padding:1px 7px;border-radius:999px">${r.device_used}</span>` : ''}
         </div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px">
-          ${r.hrv?.rmssd ? `<span style="font-size:11px;background:#f5f3ff;color:#7c3aed;padding:3px 10px;border-radius:6px;font-weight:600">HRV <strong>${r.hrv.rmssd}</strong> ms</span>` : ''}
-          ${r.vitals?.rhr ? `<span style="font-size:11px;background:#fef2f2;color:#dc2626;padding:3px 10px;border-radius:6px;font-weight:600">RHR <strong>${r.vitals.rhr}</strong> bpm</span>` : ''}
-          ${r.vitals?.spo2 ? `<span style="font-size:11px;background:#eff6ff;color:#1d4ed8;padding:3px 10px;border-radius:6px;font-weight:600">SpO₂ <strong>${r.vitals.spo2}%</strong></span>` : ''}
-          ${r.wearable_data?.recovery_score ? `<span style="font-size:11px;background:#f0fdf4;color:#15803d;padding:3px 10px;border-radius:6px;font-weight:600">Recovery <strong>${r.wearable_data.recovery_score}%</strong></span>` : ''}
-          ${r.wearable_data?.avg_coherence ? `<span style="font-size:11px;background:#fdf2f8;color:#be185d;padding:3px 10px;border-radius:6px;font-weight:600">Coherence <strong>${r.wearable_data.avg_coherence}</strong></span>` : ''}
-        </div>
-        ${r.notes ? `<p style="font-size:10.5px;color:#64748b;margin-top:6px;font-style:italic">${r.notes}</p>` : ''}
-      </div>`).join('')
-      return physMetrics + rows
+        ${flagged.length>0?`<div class="alert-warn no-break">⚠ ${flagged.length} flagged check-in${flagged.length>1?'s':''}: ${[...new Set(flagged.flatMap((c:any)=>c.flags??[]))].join(', ')}</div>`:''}
+        <table class="no-break">
+          <thead><tr><th>Date</th><th>Mood</th><th>Stress</th><th>Sleep</th><th>Motivation</th><th>Readiness</th><th>Flags</th><th>Notes</th></tr></thead>
+          <tbody>${checkins.map((c:any)=>`<tr>
+            <td style="white-space:nowrap;font-size:10.5px;font-weight:500">${fmtDate(c.checked_in_at)}</td>
+            <td><strong style="color:${scoreColor(c.mood_score)}">${c.mood_score}</strong></td>
+            <td><strong style="color:${scoreColor(10-c.stress_score)}">${c.stress_score}</strong></td>
+            <td><strong style="color:${scoreColor(c.sleep_score)}">${c.sleep_score}</strong></td>
+            <td><strong style="color:${scoreColor(c.motivation_score??5)}">${c.motivation_score??'—'}</strong></td>
+            <td><strong style="color:${scoreColor(c.readiness_score)}">${c.readiness_score}</strong></td>
+            <td style="color:#ef4444;font-size:10px">${c.flags?.join(', ')||'—'}</td>
+            <td style="font-size:10.5px;max-width:180px;color:#6b7280">${c.notes?redactNote(c.notes,fullName).slice(0,120):'—'}</td>
+          </tr>`).join('')}</tbody>
+        </table>`
+
+    // ── ASSESSMENTS ───────────────────────────────────────────────────────────
+    const asmHtml = assessments.length===0
+      ? '<p style="color:#9ca3af;font-size:12px;padding:12px 0">No assessments administered.</p>'
+      : assessments.map((a:any)=>{
+          const isExt = String(a.tool).startsWith('EXTERNAL:')
+          const tname = isExt ? String(a.tool).replace('EXTERNAL:','') : a.tool
+          const scoreEntries = Object.entries(a.scores??{})
+          const bars = scoreEntries.map(([n,v])=>{
+            const num = v as number
+            const max = 30
+            const pct = Math.min((num/max)*100,100)
+            const col  = num>=(max*0.7)?'#22c55e':num>=(max*0.4)?'#f59e0b':'#ef4444'
+            return `<div class="bar-row">
+              <span class="bar-name">${n}</span>
+              <div style="flex:1;display:flex;align-items:center;gap:8px">${svgBar(pct,col,8)}</div>
+              <span class="bar-val" style="color:${col}">${num}</span>
+            </div>`
+          }).join('')
+          return `<div class="card no-break" style="margin-bottom:12px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span class="chip chip-blue" style="font-size:11px;font-weight:800;padding:3px 10px">${tname}</span>
+                ${isExt?'<span class="chip chip-gray">Offline</span>':''}
+                <span style="font-size:10.5px;color:#6b7280">${fmtDate(a.administered_at)}</span>
+              </div>
+              <div style="text-align:right">
+                <span style="font-size:22px;font-weight:900;color:#1A2D4A">${a.total_score}</span>
+                <span style="font-size:10px;color:#9ca3af;margin-left:2px">total score</span>
+              </div>
+            </div>
+            ${bars}
+            ${a.notes?`<div style="margin-top:10px;background:#f8fafc;border-radius:6px;padding:8px 12px;font-size:11px;color:#374151;border-left:3px solid #93c5fd">
+              <strong style="color:#1d4ed8">Notes:</strong> ${redactNote(a.notes,fullName).slice(0,300)}</div>`:''}
+          </div>`
+        }).join('')
+
+    // ── INTERVENTIONS ─────────────────────────────────────────────────────────
+    const byCat: Record<string,any[]> = {}
+    interventions.forEach((i:any)=>{ if(!byCat[i.category])byCat[i.category]=[]; byCat[i.category].push(i) })
+    const intHtml = interventions.length===0
+      ? '<p style="color:#9ca3af;font-size:12px;padding:12px 0">No interventions logged.</p>'
+      : Object.entries(byCat).map(([cat,list])=>`
+          <div style="margin-bottom:14px">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;
+              margin-bottom:8px;display:flex;align-items:center;gap:6px">
+              <span style="width:4px;height:16px;background:#3b82f6;border-radius:2px;display:inline-block"></span>
+              ${cat.replace(/_/g,' ')} · ${list.length}
+            </div>
+            ${list.map((i:any)=>`<div class="card no-break" style="margin-bottom:6px">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between">
+                <div style="font-weight:600;font-size:12px;color:#0f172a">${i.title}</div>
+                ${i.rating?`<div style="color:#f59e0b;font-size:13px;flex-shrink:0">${'★'.repeat(i.rating)}${'☆'.repeat(5-i.rating)}</div>`:''}
+              </div>
+              ${i.description?`<div style="font-size:11px;color:#6b7280;margin-top:4px">${redactNote(i.description,fullName).slice(0,200)}</div>`:''}
+              ${i.outcome?`<div style="font-size:11px;color:#059669;margin-top:5px;display:flex;align-items:center;gap:4px">
+                <span style="font-size:14px">✓</span> ${redactNote(i.outcome,fullName).slice(0,150)}</div>`:''}
+              <div style="font-size:10px;color:#d1d5db;margin-top:5px">${fmtDate(i.created_at)}</div>
+            </div>`).join('')}
+          </div>`).join('')
+
+
+    // ── INJURY PSYCHOLOGY ─────────────────────────────────────────────────────
+    const severityColor: Record<string,string> = {
+      minimal:'#22c55e', mild:'#84cc16', moderate:'#f59e0b',
+      severe:'#ef4444', career_threatening:'#7f1d1d'
+    }
+    const injuryHtml = injuryRecords.length===0 ? '' : (() => {
+      const active = injuryRecords.filter((r:any)=>r.status!=='recovered').length
+      const rtp_cleared = psychReadiness.filter((r:any)=>r.ready_to_return).length
+      const avgReadiness = psychReadiness.length
+        ? (psychReadiness.reduce((a:number,r:any)=>a+r.overall_readiness,0)/psychReadiness.length).toFixed(0) : null
+
+      return `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+        <div class="metric-cell"><div class="metric-val" style="color:#ef4444">${injuryRecords.length}</div><div class="metric-lbl">Total Injuries</div></div>
+        <div class="metric-cell"><div class="metric-val" style="color:#f59e0b">${active}</div><div class="metric-lbl">Active</div></div>
+        <div class="metric-cell"><div class="metric-val" style="color:#8b5cf6">${psychReadiness.length}</div><div class="metric-lbl">Readiness Assessments</div></div>
+        <div class="metric-cell"><div class="metric-val" style="color:${avgReadiness&&parseInt(avgReadiness)>=70?'#22c55e':avgReadiness?'#f59e0b':'#9ca3af'}">${avgReadiness??'—'}${avgReadiness?'%':''}</div><div class="metric-lbl">Avg Readiness</div></div>
+      </div>
+      <table class="no-break">
+        <thead><tr><th>Date</th><th>OSIICS / Diagnosis</th><th>Context</th><th>Severity</th><th>Status</th><th>Missed</th><th>Psych Ref</th></tr></thead>
+        <tbody>${injuryRecords.map((r:any)=>{
+          const diagLabel = r.osiics_code_1
+            ? \`<span class="chip chip-purple" style="font-size:9px">\${r.osiics_code_1}</span> \${r.osiics_diagnosis_1??r.diagnosis_text}\`
+            : r.diagnosis_text
+          return \`<tr>
+            <td style="white-space:nowrap;font-weight:500">\${r.date_of_injury}</td>
+            <td style="font-size:10.5px">\${diagLabel}</td>
+            <td>\${r.context}</td>
+            <td><span style="font-weight:700;color:\${severityColor[r.severity]??'#6b7280'}">\${r.severity}</span></td>
+            <td><span class="chip \${r.status==='recovered'?'chip-green':r.status==='acute'?'chip-red':'chip-amber'}">\${r.status}</span></td>
+            <td style="font-size:10.5px">\${r.missed_days??0}d / \${r.missed_matches??0} matches</td>
+            <td style="text-align:center">\${r.psych_referral_needed?'<span style="color:#dc2626;font-weight:700">⚠ YES</span>':'—'}</td>
+          </tr>\`
+        }).join('')}</tbody>
+      </table>
+      ${psychReadiness.length>0?`<div style="margin-top:16px"><div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Psychological Readiness Assessments</div>
+      <table class="no-break">
+        <thead><tr><th>Date</th><th>Overall Readiness</th><th>RTP Cleared</th><th>ACL-RSI</th><th>SFK-11</th><th>TFSI-R</th><th>Notes</th></tr></thead>
+        <tbody>${psychReadiness.map((r:any)=>{
+          const col = r.overall_readiness>=70?'#22c55e':r.overall_readiness>=50?'#f59e0b':'#ef4444'
+          return \`<tr>
+            <td style="white-space:nowrap;font-weight:500">\${r.assessed_at?.slice(0,10)??'—'}</td>
+            <td><span style="font-size:16px;font-weight:900;color:\${col}">\${r.overall_readiness}%</span></td>
+            <td>\${r.ready_to_return?'<span style="color:#16a34a;font-weight:700">✓ CLEARED</span>':'<span style="color:#ef4444">Not cleared</span>'}</td>
+            <td>\${r.acl_psych_total??'—'}</td>
+            <td>\${r.sfk_total??'—'}</td>
+            <td>\${r.tfsi_r_total??'—'}</td>
+            <td style="font-size:10px;max-width:160px;color:#6b7280">\${r.notes?.slice(0,100)??'—'}</td>
+          </tr>\`
+        }).join('')}</tbody>
+      </table></div>`:''}`
     })()
 
-    // ── Mental Performance Lab ───────────────────────────────────────────────
-    const labHtml = labSessions.length === 0 ? '' : (() => {
-      const byTech: Record<string, any[]> = {}
-      labSessions.forEach((s: any) => { if (!byTech[s.technology]) byTech[s.technology] = []; byTech[s.technology].push(s) })
-      return Object.entries(byTech).map(([tech, techSessions]) => {
-        const latest = techSessions[0]
-        const techLabel = tech.replace(/_/g,' ').replace(/\b\w/g, (c: string) => c.toUpperCase())
-        const numScores = Object.entries(latest.scores ?? {}).filter(([, v]) => typeof v === 'number') as [string, number][]
-        const maxVal = Math.max(...numScores.map(([, v]) => v), 1)
-        const bars = numScores.slice(0, 8).map(([k, v]) => {
-          const pct = Math.min(Math.round(v / maxVal * 100), 100)
-          const col = pct >= 70 ? '#16a34a' : pct >= 40 ? '#d97706' : '#dc2626'
-          return `<div class="bar-row"><div class="bar-label"><span>${k.replace(/_/g,' ')}</span><span style="font-weight:700;color:${col}">${typeof v === 'number' ? v.toFixed(1) : v}</span></div>
-            <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div></div>`
+    // ── PHYSIO & WEARABLES ────────────────────────────────────────────────────
+    const physioHtml = physioRecords.length===0 ? '' : (() => {
+      const latestHrv = physioRecords.find((r:any)=>r.hrv?.rmssd)
+      const avgHrv = physioRecords.filter((r:any)=>r.hrv?.rmssd).length
+        ? (physioRecords.filter((r:any)=>r.hrv?.rmssd).reduce((a:number,r:any)=>a+r.hrv.rmssd,0)/physioRecords.filter((r:any)=>r.hrv?.rmssd).length).toFixed(1) : '—'
+      const avgRhr = physioRecords.filter((r:any)=>r.vitals?.rhr).length
+        ? (physioRecords.filter((r:any)=>r.vitals?.rhr).reduce((a:number,r:any)=>a+r.vitals.rhr,0)/physioRecords.filter((r:any)=>r.vitals?.rhr).length).toFixed(0) : '—'
+      const wearableRecs = physioRecords.filter((r:any)=>r.wearable_data)
+      const avgRecovery = wearableRecs.filter((r:any)=>r.wearable_data?.recovery_score).length
+        ? (wearableRecs.filter((r:any)=>r.wearable_data?.recovery_score).reduce((a:number,r:any)=>a+r.wearable_data.recovery_score,0)/wearableRecs.filter((r:any)=>r.wearable_data?.recovery_score).length).toFixed(0) : null
+      const avgCoherence = wearableRecs.filter((r:any)=>r.wearable_data?.avg_coherence).length
+        ? (wearableRecs.filter((r:any)=>r.wearable_data?.avg_coherence).reduce((a:number,r:any)=>a+r.wearable_data.avg_coherence,0)/wearableRecs.filter((r:any)=>r.wearable_data?.avg_coherence).length).toFixed(2) : null
+
+      return `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+        <div class="hrv-cell"><div class="hrv-val">${avgHrv}${avgHrv!=='—'?'<span style="font-size:10px;color:#9ca3af"> ms</span>':''}</div><div class="hrv-lbl">Avg HRV RMSSD</div></div>
+        <div class="hrv-cell" style="background:#fff5f5;border-color:#fecaca"><div class="hrv-val" style="color:#dc2626">${avgRhr}${avgRhr!=='—'?'<span style="font-size:10px;color:#9ca3af"> bpm</span>':''}</div><div class="hrv-lbl">Avg RHR</div></div>
+        ${avgRecovery?`<div class="hrv-cell" style="background:#f0fdf4;border-color:#86efac"><div class="hrv-val" style="color:#16a34a">${avgRecovery}%</div><div class="hrv-lbl">Avg Recovery</div></div>`:'<div class="hrv-cell" style="opacity:.4"><div class="hrv-val">—</div><div class="hrv-lbl">Recovery</div></div>'}
+        ${avgCoherence?`<div class="hrv-cell" style="background:#fdf4ff;border-color:#e9d5ff"><div class="hrv-val" style="color:#9333ea">${avgCoherence}</div><div class="hrv-lbl">Avg Coherence</div></div>`:'<div class="hrv-cell" style="opacity:.4"><div class="hrv-val">—</div><div class="hrv-lbl">Coherence</div></div>'}
+      </div>
+      <table class="no-break">
+        <thead><tr><th>Date</th><th>Context</th><th>HRV RMSSD</th><th>RHR</th><th>SpO₂</th><th>Recovery</th><th>Coherence</th><th>Device</th></tr></thead>
+        <tbody>${physioRecords.slice(0,20).map((r:any)=>`<tr>
+          <td style="white-space:nowrap;font-weight:500">${fmtDate(r.created_at)}</td>
+          <td><span class="chip chip-gray">${(r.session_context??'').replace(/_/g,' ')}</span></td>
+          <td style="font-weight:700;color:#7c3aed">${r.hrv?.rmssd??'—'}${r.hrv?.rmssd?'ms':''}</td>
+          <td style="font-weight:700;color:#dc2626">${r.vitals?.rhr??'—'}${r.vitals?.rhr?' bpm':''}</td>
+          <td>${r.vitals?.spo2??'—'}${r.vitals?.spo2?'%':''}</td>
+          <td style="font-weight:700;color:#16a34a">${r.wearable_data?.recovery_score??'—'}${r.wearable_data?.recovery_score?'%':''}</td>
+          <td style="color:#9333ea">${r.wearable_data?.avg_coherence??'—'}</td>
+          <td style="font-size:10px;color:#9ca3af">${r.device_used??'—'}</td>
+        </tr>`).join('')}</tbody>
+      </table>`
+    })()
+
+    // ── LAB TECHNOLOGY ────────────────────────────────────────────────────────
+    const labHtml = labSessions.length===0 ? '' : (() => {
+      const byTech: Record<string,any[]> = {}
+      labSessions.forEach((s:any)=>{ if(!byTech[s.technology])byTech[s.technology]=[]; byTech[s.technology].push(s) })
+      return Object.entries(byTech).map(([tech, sessions])=>{
+        const latest = sessions[0]
+        const label = tech.replace(/_/g,' ').replace(/\b\w/g,(c:string)=>c.toUpperCase())
+        const scoreRows = Object.entries(latest.scores??{}).slice(0,8).map(([k,v])=>{
+          const num = typeof v==='number' ? v : null
+          return `<div class="bar-row" style="margin-bottom:5px">
+            <span class="bar-name" style="width:160px">${k.replace(/_/g,' ')}</span>
+            ${num!=null?`<div style="flex:1;display:flex;align-items:center;gap:8px">${svgBar(Math.min(num,100),'#3b82f6',6)}</div><span class="bar-val">${num}</span>`:`<span style="font-size:11px;color:#9ca3af">${v}</span>`}
+          </div>`
         }).join('')
-        const textScores = Object.entries(latest.scores ?? {}).filter(([, v]) => typeof v === 'string' && v)
-          .map(([k, v]) => `<span style="font-size:10px;background:#f1f5f9;color:#475569;padding:2px 8px;border-radius:4px">${k.replace(/_/g,' ')}: <strong>${v}</strong></span>`).join(' ')
-        return `<div class="card no-break" style="margin-bottom:12px">
+        return `<div class="card no-break" style="margin-bottom:10px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <div style="display:flex;align-items:center;gap:8px">
-              <span class="tech-chip">${techLabel}</span>
-              <span class="${latest.consent_given ? 'consent-yes' : 'consent-no'}">${latest.consent_given ? '✓ Consent' : '⚠ No consent'}</span>
+              <span class="chip chip-purple" style="font-size:11px;font-weight:800">${label}</span>
+              <span style="font-size:10.5px;color:#9ca3af">${sessions.length} session${sessions.length>1?'s':''}</span>
             </div>
-            <span style="font-size:10px;color:#94a3b8">${techSessions.length} session${techSessions.length > 1 ? 's' : ''} · Last ${latest.session_date}</span>
+            <span style="font-size:10px;color:#9ca3af">Latest: ${latest.session_date}</span>
           </div>
-          ${bars}
-          ${textScores ? `<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px">${textScores}</div>` : ''}
-          ${latest.flags?.length ? `<div class="alert-amber" style="margin-top:8px">⚠ Flags: ${latest.flags.join(' · ')}</div>` : ''}
-          ${latest.notes ? `<p style="font-size:10.5px;color:#64748b;margin-top:6px;font-style:italic">${redactNote(latest.notes, fullName).slice(0, 150)}</p>` : ''}
+          ${scoreRows}
+          ${latest.flags?.length>0?`<div class="alert-warn" style="margin-top:8px;margin-bottom:0">⚠ ${latest.flags.join(' · ')}</div>`:''}
+          ${latest.notes?`<div style="font-size:11px;color:#6b7280;margin-top:6px;font-style:italic">${latest.notes}</div>`:''}
         </div>`
       }).join('')
     })()
 
-    // ── Performance Profiles ─────────────────────────────────────────────────
-    const profileHtml = perfProfiles.length === 0 ? '' : (() => {
-      const byDomain: Record<string, any[]> = {}
-      perfProfiles.forEach((p: any) => { if (!byDomain[p.domain_id]) byDomain[p.domain_id] = []; byDomain[p.domain_id].push(p) })
-      const domainLabels: Record<string, string> = {
-        mental_toughness: 'Mental Toughness', pre_competition: 'Pre-Competition State',
-        performance_capacity: 'Performance Capacity', team_cohesion: 'Team Cohesion', flow_readiness: 'Flow Readiness',
-      }
-      const domainColors: Record<string, string> = {
-        mental_toughness: '#3b82f6', pre_competition: '#f59e0b', performance_capacity: '#10b981',
-        team_cohesion: '#8b5cf6', flow_readiness: '#f43f5e',
-      }
-      const cards = Object.entries(byDomain).map(([domainId, dps]) => {
-        const latest = dps[0]
-        const vals = Object.values(latest.scores as Record<string, number>)
-        const avg = (vals.reduce((a, b) => a + b, 0) / vals.length)
-        const col = domainColors[domainId] ?? '#6b7280'
-        const bars = Object.entries(latest.scores as Record<string, number>).map(([k, v]) => {
-          const pct = Math.round(v * 10)
-          return `<div class="bar-row"><div class="bar-label"><span style="font-size:11px">${k.replace(/_/g,' ')}</span><span style="font-weight:700;color:${col}">${v}/10</span></div>
-            <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${col}"></div></div></div>`
-        }).join('')
+    // ── PERFORMANCE PROFILES ──────────────────────────────────────────────────
+    const domainColors: Record<string,string> = {
+      mental_toughness:'#3b82f6', pre_competition:'#f59e0b',
+      performance_capacity:'#10b981', team_cohesion:'#8b5cf6', flow_readiness:'#f43f5e',
+    }
+    const domainLabels: Record<string,string> = {
+      mental_toughness:'Mental Toughness', pre_competition:'Pre-Competition State',
+      performance_capacity:'Performance Capacity', team_cohesion:'Team Cohesion', flow_readiness:'Flow Readiness',
+    }
+    const profHtml = perfProfiles.length===0 ? '' : (() => {
+      const byDomain: Record<string,any[]> = {}
+      perfProfiles.forEach((p:any)=>{ if(!byDomain[p.domain_id])byDomain[p.domain_id]=[]; byDomain[p.domain_id].push(p) })
+      return `<div class="two-col" style="gap:14px">${Object.entries(byDomain).map(([dom, profiles])=>{
+        const latest = profiles[0]
+        const color = domainColors[dom]??'#6b7280'
+        const label = domainLabels[dom]??dom.replace(/_/g,' ')
+        const scores = Object.entries(latest.scores as Record<string,number>)
+        const avg = scores.length ? (scores.reduce((a,[,v])=>a+v,0)/scores.length).toFixed(1) : '0'
+        const rings = scores.slice(0,6).map(([k,v])=>hexagon(k.replace(/_/g,' ').split(' ').slice(0,2).join(' '),v,color)).join('')
         return `<div class="card no-break">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <div>
-              <div style="font-size:13px;font-weight:800;color:#1e293b">${domainLabels[domainId] ?? domainId.replace(/_/g,' ')}</div>
-              <div style="font-size:10px;color:#94a3b8">${dps.length} entr${dps.length === 1 ? 'y' : 'ies'} · Latest ${fmtDate(latest.created_at)}</div>
+              <div style="font-size:12px;font-weight:800;color:#0f172a">${label}</div>
+              <div style="font-size:10px;color:#9ca3af">${profiles.length} entr${profiles.length===1?'y':'ies'} · Latest ${fmtDate(latest.created_at)}</div>
             </div>
-            <div style="text-align:center;background:${col}14;border-radius:12px;padding:10px 18px">
-              <div style="font-size:28px;font-weight:900;color:${col};line-height:1">${avg.toFixed(1)}</div>
-              <div style="font-size:9px;color:${col};opacity:.7;text-transform:uppercase">/ 10 avg</div>
+            <div style="text-align:right">
+              <div style="font-size:26px;font-weight:900;color:${color};line-height:1">${avg}</div>
+              <div style="font-size:9px;color:#9ca3af">/10 avg</div>
             </div>
           </div>
-          ${bars}
+          <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center">${rings}</div>
+          ${latest.notes?`<div style="margin-top:10px;font-size:11px;color:#6b7280;font-style:italic">${latest.notes}</div>`:''}
         </div>`
-      })
-      // two-column grid
-      const pairs: string[] = []
-      for (let i = 0; i < cards.length; i += 2) {
-        pairs.push(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-          ${cards[i]}${cards[i+1] ?? '<div></div>'}
-        </div>`)
-      }
-      return pairs.join('')
+      }).join('')}</div>`
     })()
 
-    // ── Footer ────────────────────────────────────────────────────────────────
-    const neuroHtml = neuroRecords.length === 0 ? '' : (() => {
-      const skillKeys = ['visual_clarity','contrast_sensitivity','near_far_quickness','target_capture','depth_sensitivity','perception_span','multiple_object_tracking','reaction_time','peripheral_reaction','go_no_go']
-      const skillLabels: Record<string,string> = { visual_clarity:'Visual Clarity',contrast_sensitivity:'Contrast Sensitivity',near_far_quickness:'Near-Far Quickness',target_capture:'Target Capture',depth_sensitivity:'Depth Sensitivity',perception_span:'Perception Span',multiple_object_tracking:'Multi-Object Tracking',reaction_time:'Reaction Time',peripheral_reaction:'Peripheral Reaction',go_no_go:'Go / No Go' }
-      const domainMap: Record<string,string> = { visual_clarity:'visual',contrast_sensitivity:'visual',near_far_quickness:'visual',target_capture:'visual',depth_sensitivity:'processing',perception_span:'processing',multiple_object_tracking:'processing',reaction_time:'reaction',peripheral_reaction:'reaction',go_no_go:'reaction' }
-      const domainColors: Record<string,string> = { visual:'#3b82f6', processing:'#8b5cf6', reaction:'#10b981' }
-      return neuroRecords.map((r: any) => {
-        const scores = r.senaptec_scores ?? {}
-        const vals = skillKeys.map(k => scores[k]).filter((v): v is number => v != null)
-        const avg = vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null
-        const hasSenaptec = vals.length > 0
-        const skillBars = hasSenaptec ? skillKeys.filter(k => scores[k] != null).map(k => {
-          const pct = scores[k]
-          const col = domainColors[domainMap[k]] ?? '#6b7280'
-          const colBar = pct >= 50 ? col : '#f59e0b'
-          return `<div class="bar-row"><div class="bar-label"><span style="font-size:10px">${skillLabels[k]}</span><span style="font-weight:700;color:${colBar}">${pct}th</span></div>
-            <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${colBar}"></div></div></div>`
-        }).join('') : ''
-        const customRows = r.custom_metrics?.filter((m: any) => m.name && m.value).map((m: any) =>
-          `<div class="bar-row"><div class="bar-label"><span style="font-size:10px">${m.name}</span><span style="font-weight:700;color:#6b7280">${m.value} ${m.unit}</span></div></div>`
-        ).join('') ?? ''
-        return `<div class="card no-break">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+    // ── DOCUMENTS ─────────────────────────────────────────────────────────────
+    const docsHtml = documents.length===0 ? '' :
+      documents.map((d:any)=>{
+        const findings = Array.isArray(d.ai_key_findings) ? d.ai_key_findings : []
+        const flags = Array.isArray(d.ai_flags) ? d.ai_flags : []
+        const catLabel = String(d.document_category??'other').replace(/_/g,' ')
+        return `<div class="card no-break ${flags.length?'flagged':''}">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px">
             <div>
-              <div style="font-size:13px;font-weight:800;color:#1e293b">${r.platform}</div>
-              <div style="font-size:10px;color:#94a3b8">${fmtDate(r.test_date ?? r.created_at)} · ${(r.context ?? '').replace(/_/g,' ')} · vs ${r.comparison_group ?? '—'}</div>
+              <span class="chip chip-gray" style="text-transform:capitalize">${catLabel}</span>
+              <strong style="font-size:12px;color:#0f172a;margin-left:4px">${d.file_name}</strong>
             </div>
-            ${avg != null ? `<div style="text-align:center;background:#eff6ff;border-radius:12px;padding:10px 18px">
-              <div style="font-size:28px;font-weight:900;color:#3b82f6;line-height:1">${avg}</div>
-              <div style="font-size:9px;color:#3b82f6;opacity:.7;text-transform:uppercase">th %ile avg</div>
-            </div>` : ''}
+            <div style="text-align:right">
+              ${d.ai_confidence?`<span class="chip ${d.ai_confidence>=70?'chip-green':d.ai_confidence>=40?'chip-amber':'chip-red'}">${d.ai_confidence}% confidence</span>`:'' }
+              <div style="font-size:10px;color:#9ca3af;margin-top:2px">${fmtDate(d.uploaded_at)}</div>
+            </div>
           </div>
-          ${skillBars}${customRows}
-          ${r.notes ? `<div style="margin-top:8px;padding:8px;background:#f8fafc;border-radius:8px;font-size:11px;color:#475569">${r.notes.slice(0,200)}</div>` : ''}
+          ${d.ai_summary?`<p style="font-size:11.5px;color:#374151;line-height:1.7;margin-bottom:8px">${d.ai_summary}</p>`:''}
+          ${findings.length>0?`<div style="margin-bottom:8px">
+            <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px">Key Findings</div>
+            ${findings.map((f:string)=>`<div style="font-size:11px;color:#374151;padding:3px 0 3px 12px;border-left:2px solid #93c5fd;margin-bottom:3px">${f}</div>`).join('')}
+          </div>`:''}
+          ${flags.length>0?`<div class="alert-warn" style="margin-bottom:6px">
+            ${flags.map((f:string)=>`<div>⚠ ${f}</div>`).join('')}</div>`:''}
+          ${d.ai_recommendations?`<div style="font-size:11px;color:#1d4ed8;display:flex;align-items:flex-start;gap:4px">
+            <span style="color:#3b82f6;font-size:14px">→</span> ${d.ai_recommendations}</div>`:''}
+          ${d.practitioner_notes?`<div style="margin-top:8px;background:#f8fafc;border-radius:6px;padding:8px 12px;font-size:11px;color:#374151">
+            <strong>Practitioner:</strong> ${d.practitioner_notes}</div>`:''}
         </div>`
       }).join('')
-    })()
 
-    const footer = `
-      <div class="footer-strip">
-        <div>
-          <div class="footer-brand">WIN<span style="color:#3b82f6">MIND</span>PERFORM</div>
-          <div class="footer-sub">Sport Psychology Practitioner Suite · SPPS</div>
+    // ── REPORTS ───────────────────────────────────────────────────────────────
+    const repHtml = reports.length===0
+      ? '<p style="color:#9ca3af;font-size:12px;padding:12px 0">No reports generated.</p>'
+      : reports.map((r:any)=>`<div class="card no-break">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <strong style="font-size:12px;color:#0f172a">${r.title}</strong>
+            <div style="display:flex;align-items:center;gap:6px">
+              ${r.is_ai_generated?'<span class="chip chip-purple">AI Generated</span>':''}
+              <span style="font-size:10px;color:#9ca3af">${fmtDate(r.generated_at)}</span>
+            </div>
+          </div>
+          <span class="chip chip-blue">${(r.report_type??'custom').replace(/_/g,' ')}</span>
+          ${r.content?`<div style="margin-top:8px;font-size:11px;color:#374151;line-height:1.7;border-top:1px solid #f1f5f9;padding-top:8px">${redactNote(r.content,fullName).slice(0,600)}${r.content.length>600?'…':''}</div>`:''}
+        </div>`).join('')
+
+    // ── Section builder ───────────────────────────────────────────────────────
+    function sec(icon: string, iconBg: string, title: string, pill: string, content: string): string {
+      return `<div class="section no-break">
+        <div class="sec-head">
+          <div class="sec-icon" style="background:${iconBg}">${icon}</div>
+          <span class="sec-title">${title}</span>
+          <span class="sec-pill">${pill}</span>
         </div>
-        <div style="text-align:center;color:#475569;font-size:10px">
-          <div style="font-weight:700;color:#64748b;margin-bottom:2px">Anonymised Document — No PII</div>
-          Athlete identity resolvable only by the authorised practitioner<br>
-          DPDP Act 2023 compliant · Unauthorised distribution prohibited
-        </div>
-        <div class="footer-anon">
-          <div style="color:#64748b;font-weight:700">${anon.uid_code}</div>
-          <div>${now.toLocaleDateString('en-IN')}</div>
-        </div>
+        ${content}
       </div>`
+    }
 
-    // ── Assemble ──────────────────────────────────────────────────────────────
-    const sectionCfg = [
-      ['📅', 'Sessions',             `${sessions.length} total · ${completed} completed`, sessHtml,    '#1A2D4A'],
-      ['📊', 'Daily Check-ins',      `${checkins.length} records · ${flagged.length} flagged`, chkHtml, '#0369a1'],
-      ['🧠', 'Assessments',          `${assessments.length} administered`, asmHtml,   '#7c3aed'],
-      ['🎯', 'Interventions',        `${interventions.length} total`, intHtml,         '#059669'],
-      ['📄', 'Reports',              `${reports.length} generated`, repHtml,           '#d97706'],
-      ...(documents.length > 0   ? [['📁', 'Uploaded Documents',   `${documents.length} file${documents.length>1?'s':''}`, docsHtml, '#475569']] : []),
-      ...(physioRecords.length > 0 ? [['💓', 'Physio & Wearables', `${physioRecords.length} records`, physioHtml, '#8b5cf6']] : []),
-      ...(labSessions.length > 0   ? [['🔬', 'Mental Performance Lab', `${labSessions.length} sessions`, labHtml, '#0ea5e9']] : []),
-      ...(neuroRecords.length > 0  ? [['👁', 'Neurocognitive',          `${neuroRecords.length} records`, neuroHtml, '#3b82f6']] : []),
-      ...(perfProfiles.length > 0  ? [['🎯', 'Performance Profiles', `${perfProfiles.length} entries`, profileHtml, '#f43f5e']] : []),
-    ] as [string, string, string, string, string][]
-
-    const body = `<div class="body">${riskAlert}${sectionCfg.map(([emoji, title, pill, html, accent]) =>
-      html ? `<div class="no-break" style="margin-bottom:6px">${sec(emoji, title, pill, accent)}<div>${html}</div></div>` : ''
-    ).join('')}</div>`
-
+    // ── Assemble final HTML ───────────────────────────────────────────────────
     const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
       <title>Case Formulation — ${anon.uid_code}</title>
-      <style>${css}</style></head><body class="page">
-      ${cover}${statsStrip}${body}${footer}
-      <script>window.onload=function(){window.print()}<\/script>
+      <style>${css}</style></head><body>
+      <div class="page">
+        ${cover}
+        <div class="body">
+          ${riskAlert}
+          ${sec('📅','#dbeafe','Sessions',`${sessions.length} total · ${completed} completed`,sessHtml)}
+          ${sec('📊','#dcfce7','Daily Check-ins',`${checkins.length} records · ${flagged.length} flagged`,chkHtml)}
+          ${sec('🧠','#ede9fe','Assessments',`${assessments.length} administered`,asmHtml)}
+          ${sec('🎯','#fef3c7','Interventions',`${interventions.length} total`,intHtml)}
+          ${injuryRecords.length>0?sec('🩹','#fff1f2','Injury Psychology',`${injuryRecords.length} injuries · ${psychReadiness.length} readiness assessments`,injuryHtml):''}
+          ${physioRecords.length>0?sec('💓','#fdf4ff','Psychophysiology & Wearables',`${physioRecords.length} records`,physioHtml):''}
+          ${labSessions.length>0?sec('🧪','#f0fdf4','Mental Performance Lab',`${labSessions.length} sessions`,labHtml):''}
+          ${perfProfiles.length>0?sec('🎯','#fff7ed','Performance Profiles',`${perfProfiles.length} entries`,profHtml):''}
+          ${documents.length>0?sec('📁','#f1f5f9','Uploaded Documents',`${documents.length} document${documents.length>1?'s':''}`,docsHtml):''}
+          ${reports.length>0?sec('📄','#ecfdf5','Reports',`${reports.length} generated`,repHtml):''}
+
+          <div style="background:linear-gradient(135deg,#fffbeb,#fefce8);border:1px solid #fbbf24;border-radius:10px;
+            padding:14px 18px;font-size:10px;color:#92400e;line-height:1.7;margin-top:8px">
+            <strong>ANONYMISATION NOTICE:</strong> This document identifies athletes by UID code only.
+            No personally identifiable information (name, DOB, or contact details) is included.
+            The UID–identity mapping is maintained securely by the authorised practitioner in the SPPS platform.
+            Unauthorised disclosure is prohibited. DPDP Act 2023 compliant.
+          </div>
+        </div>
+        <div class="footer">
+          <div><strong>WinMindPerform</strong> — Sport Psychology Practitioner Suite (SPPS)</div>
+          <div>Anonymised Document · UID-referenced · No PII</div>
+          <div>${now.toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'})}</div>
+        </div>
+      </div>
+      <script>window.onload=function(){window.print()}</script>
     </body></html>`
 
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
     const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
-    a.href = url; a.target = '_blank'; a.rel = 'noopener'
-    document.body.appendChild(a); a.click(); document.body.removeChild(a)
-    setTimeout(() => URL.revokeObjectURL(url), 2000)
+    const win  = window.open(url, '_blank', 'noopener,noreferrer')
+    if (!win) {
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `CaseReport_${anon.uid_code}_${now.toISOString().slice(0,10)}.html`
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 30000)
   }
 
-  // ── Anonymous .txt export — NO personal details, UID only ──────────────────
+
+    // ── Anonymous .txt export — NO personal details, UID only ──────────────────
   function exportFullReport() {
     if (!athlete) return
     const anon = anonymise(athlete)
@@ -1764,66 +1805,6 @@ export default function CaseFormulationPage() {
         d.practitioner_notes ? `  Practitioner Notes: ${d.practitioner_notes}` : '',
       ].filter(Boolean).join('\n')),
       ``,
-      ...(physioRecords.length > 0 ? [
-        `${'─'.repeat(60)}`,
-        `PHYSIO & WEARABLES  (${physioRecords.length} records)`,
-        `${'─'.repeat(60)}`,
-        ...physioRecords.slice(0, 20).map((r: any) => [
-          `  ${fmtDate(r.created_at)} · ${(r.session_context ?? '—').replace(/_/g,' ')}${r.device_used ? ` · ${r.device_used}` : ''}`,
-          r.hrv?.rmssd ? `    HRV: ${r.hrv.rmssd} ms` : '',
-          r.vitals?.rhr ? `    RHR: ${r.vitals.rhr} bpm` : '',
-          r.vitals?.spo2 ? `    SpO₂: ${r.vitals.spo2}%` : '',
-          r.wearable_data?.recovery_score ? `    Recovery: ${r.wearable_data.recovery_score}%` : '',
-          r.wearable_data?.avg_coherence ? `    Coherence: ${r.wearable_data.avg_coherence}` : '',
-          r.notes ? `    Notes: ${r.notes.slice(0,120)}` : '',
-        ].filter(Boolean).join('\n')),
-        ``,
-      ] : []),
-      ...(labSessions.length > 0 ? [
-        `${'─'.repeat(60)}`,
-        `MENTAL PERFORMANCE LAB  (${labSessions.length} sessions)`,
-        `${'─'.repeat(60)}`,
-        ...labSessions.map((s: any) => [
-          `  ${s.technology.replace(/_/g,' ').toUpperCase()} · ${s.session_date}${s.duration_minutes ? ` · ${s.duration_minutes}min` : ''}`,
-          `  Consent: ${s.consent_given ? 'Yes' : 'Not recorded'}`,
-          Object.entries(s.scores ?? {}).length > 0
-            ? `  Scores: ${Object.entries(s.scores as Record<string,any>).slice(0,8).map(([k,v]) => `${k.replace(/_/g,' ')}=${v}`).join(' | ')}`
-            : '',
-          s.flags?.length ? `  ⚠ Flags: ${s.flags.join(' · ')}` : '',
-          s.notes ? `  Notes: ${s.notes.slice(0,120)}` : '',
-        ].filter(Boolean).join('\n')),
-        ``,
-      ] : []),
-      ...(perfProfiles.length > 0 ? [
-        `${'─'.repeat(60)}`,
-        `PERFORMANCE PROFILES  (${perfProfiles.length} entries)`,
-        `${'─'.repeat(60)}`,
-        ...perfProfiles.map((p: any) => [
-          `  ${(p.domain_id ?? '').replace(/_/g,' ').toUpperCase()} · ${fmtDate(p.created_at)}`,
-          `  Scores: ${Object.entries(p.scores as Record<string,number>).map(([k,v]) => `${k.replace(/_/g,' ')}=${v}/10`).join(' | ')}`,
-        ].join('\n')),
-        ``,
-      ] : []),
-      ...(neuroRecords.length > 0 ? [
-        `${'─'.repeat(60)}`,
-        `NEUROCOGNITIVE ASSESSMENTS  (${neuroRecords.length} records)`,
-        `${'─'.repeat(60)}`,
-        ...neuroRecords.map((r: any) => {
-          const scores = r.senaptec_scores ?? {}
-          const skillKeys = ['visual_clarity','contrast_sensitivity','near_far_quickness','target_capture','depth_sensitivity','perception_span','multiple_object_tracking','reaction_time','peripheral_reaction','go_no_go']
-          const vals = skillKeys.map(k => scores[k]).filter((v): v is number => v != null)
-          const avg = vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null
-          const customStr = r.custom_metrics?.filter((m: any) => m.name && m.value).map((m: any) => `${m.name}=${m.value}${m.unit}`).join(' | ')
-          return [
-            `  ${r.platform} · ${fmtDate(r.test_date ?? r.created_at)} · ${(r.context ?? '').replace(/_/g,' ')} · vs ${r.comparison_group ?? '—'}`,
-            avg != null ? `  SENAPTEC avg: ${avg}th percentile` : '',
-            vals.length > 0 ? `  Skills: ${skillKeys.filter(k => scores[k] != null).map(k => `${k.replace(/_/g,' ')}=${scores[k]}th`).join(' | ')}` : '',
-            customStr ? `  Metrics: ${customStr}` : '',
-            r.notes ? `  Notes: ${r.notes.slice(0, 150)}` : '',
-          ].filter(Boolean).join('\n')
-        }),
-        ``,
-      ] : []),
       `${'═'.repeat(60)}`,
       `WinMindPerform — Sport Psychology Practitioner Suite`,
       `This document contains no personal identifiable information.`,
@@ -1834,164 +1815,11 @@ export default function CaseFormulationPage() {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
+    // Filename uses UID only — no personal details
     link.download = `${anon.uid_code}_CaseFormulation_${new Date().toISOString().slice(0,10)}.txt`
     link.click()
     URL.revokeObjectURL(url)
   }
-
-  // ── CSV export — full data, PII included (internal practitioner use) ──────
-  function exportCSV() {
-    if (!athlete) return
-    const anon = anonymise(athlete)
-    const now = new Date().toISOString().slice(0, 10)
-
-    function esc(v: any): string {
-      const s = String(v ?? '')
-      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
-    }
-    function row(...cells: any[]) { return cells.map(esc).join(',') }
-
-    const sheets: string[] = []
-
-    // ── Sheet 1: Athlete Profile ──────────────────────────────────────────
-    sheets.push('ATHLETE PROFILE')
-    sheets.push(row('Field', 'Value'))
-    sheets.push(row('UID Code', anon.uid_code))
-    sheets.push(row('Name', `${athlete.first_name} ${athlete.last_name}`))
-    sheets.push(row('Sport', athlete.sport))
-    sheets.push(row('Team', athlete.team ?? ''))
-    sheets.push(row('Position', athlete.position ?? ''))
-    sheets.push(row('Status', athlete.status))
-    sheets.push(row('Risk Level', athlete.risk_level))
-    sheets.push(row('DOB', athlete.date_of_birth ?? ''))
-    sheets.push(row('Email', athlete.email ?? ''))
-    sheets.push(row('Phone', athlete.phone ?? ''))
-    sheets.push(row('Emergency Contact', athlete.emergency_contact_name ?? ''))
-    sheets.push(row('Emergency Phone', athlete.emergency_contact_phone ?? ''))
-    sheets.push(row('Generated', new Date().toLocaleString()))
-    sheets.push('')
-
-    // ── Sheet 2: Sessions ─────────────────────────────────────────────────
-    sheets.push('SESSIONS')
-    sheets.push(row('Date', 'Type', 'Status', 'Duration (min)', 'Risk Assessment', 'Goals', 'Notes', 'Homework'))
-    sessions.forEach(s => sheets.push(row(
-      s.scheduled_at ? fmtDate(s.scheduled_at) : '',
-      s.session_type?.replace(/_/g,' ') ?? '',
-      s.status ?? '',
-      s.duration_minutes ?? '',
-      s.risk_assessment ?? '',
-      s.goals ?? '',
-      s.notes ?? '',
-      s.homework ?? '',
-    )))
-    sheets.push('')
-
-    // ── Sheet 3: Daily Check-ins ──────────────────────────────────────────
-    sheets.push('DAILY CHECK-INS')
-    sheets.push(row('Date', 'Mood', 'Stress', 'Sleep', 'Motivation', 'Readiness', 'Energy', 'Soreness', 'Flags', 'Notes'))
-    checkins.forEach(c => sheets.push(row(
-      fmtDate(c.checked_in_at),
-      c.mood_score, c.stress_score, c.sleep_score,
-      c.motivation_score ?? '', c.readiness_score,
-      c.energy_score ?? '', c.soreness_score ?? '',
-      (c.flags ?? []).join('; '),
-      c.notes ?? '',
-    )))
-    sheets.push('')
-
-    // ── Sheet 4: Assessments ──────────────────────────────────────────────
-    sheets.push('ASSESSMENTS')
-    // Collect all unique subscale keys
-    const allSubKeys = [...new Set(assessments.flatMap(a => Object.keys(a.scores ?? {})))]
-    sheets.push(row('Date', 'Tool', 'Total Score', 'Notes', ...allSubKeys))
-    assessments.forEach(a => sheets.push(row(
-      fmtDate(a.administered_at),
-      String(a.tool).replace('EXTERNAL:', ''),
-      a.total_score ?? '',
-      a.notes ?? '',
-      ...allSubKeys.map(k => (a.scores as any)?.[k] ?? ''),
-    )))
-    sheets.push('')
-
-    // ── Sheet 5: Interventions ────────────────────────────────────────────
-    sheets.push('INTERVENTIONS')
-    sheets.push(row('Date', 'Category', 'Title', 'Status', 'Effectiveness (1-5)', 'Description', 'Outcome'))
-    interventions.forEach(i => sheets.push(row(
-      fmtDate(i.created_at),
-      i.category ?? '', i.title ?? '',
-      i.status ?? '', i.rating ?? '',
-      i.description ?? '', i.outcome ?? '',
-    )))
-    sheets.push('')
-
-    // ── Sheet 6: Physio & Wearables ───────────────────────────────────────
-    sheets.push('PHYSIO & WEARABLES')
-    sheets.push(row('Date', 'Context', 'Device', 'HRV RMSSD', 'HRV SDNN', 'RHR', 'SpO2', 'Recovery %', 'Coherence', 'Body Battery', 'Notes'))
-    physioRecords.forEach((r: any) => sheets.push(row(
-      fmtDate(r.created_at),
-      (r.session_context ?? '').replace(/_/g,' '),
-      r.device_used ?? '',
-      r.hrv?.rmssd ?? '', r.hrv?.sdnn ?? '',
-      r.vitals?.rhr ?? '', r.vitals?.spo2 ?? '',
-      r.wearable_data?.recovery_score ?? '',
-      r.wearable_data?.avg_coherence ?? '',
-      r.wearable_data?.body_battery ?? '',
-      r.notes ?? '',
-    )))
-    sheets.push('')
-
-    // ── Sheet 7: Lab Sessions ─────────────────────────────────────────────
-    sheets.push('MENTAL PERFORMANCE LAB')
-    const allScoreKeys = [...new Set(labSessions.flatMap((s: any) => Object.keys(s.scores ?? {})))]
-    sheets.push(row('Date', 'Technology', 'Protocol', 'Duration (min)', 'Consent Given', 'Flags', 'Notes', ...allScoreKeys))
-    labSessions.forEach((s: any) => sheets.push(row(
-      s.session_date ?? '',
-      (s.technology ?? '').replace(/_/g,' '),
-      s.protocol ?? '', s.duration_minutes ?? '',
-      s.consent_given ? 'Yes' : 'No',
-      (s.flags ?? []).join('; '),
-      s.notes ?? '',
-      ...allScoreKeys.map(k => (s.scores as any)?.[k] ?? ''),
-    )))
-    sheets.push('')
-
-    // ── Sheet 8: Performance Profiles ─────────────────────────────────────
-    sheets.push('PERFORMANCE PROFILES')
-    const allProfKeys = [...new Set(perfProfiles.flatMap((p: any) => Object.keys(p.scores ?? {})))]
-    sheets.push(row('Date', 'Domain', ...allProfKeys))
-    perfProfiles.forEach((p: any) => sheets.push(row(
-      fmtDate(p.created_at),
-      (p.domain_id ?? '').replace(/_/g,' '),
-      ...allProfKeys.map(k => (p.scores as any)?.[k] ?? ''),
-    )))
-    sheets.push('')
-
-    // ── Sheet 9: Documents ────────────────────────────────────────────────
-    if (documents.length > 0) {
-      sheets.push('UPLOADED DOCUMENTS')
-      sheets.push(row('Date', 'File Name', 'Category', 'AI Confidence %', 'AI Summary', 'Key Findings', 'Flags', 'Recommendations'))
-      documents.forEach((d: any) => sheets.push(row(
-        fmtDate(d.uploaded_at),
-        d.file_name ?? '',
-        (d.document_category ?? '').replace(/_/g,' '),
-        d.ai_confidence ?? '',
-        d.ai_summary ?? '',
-        (d.ai_key_findings ?? []).slice(0,4).join(' | '),
-        (d.ai_flags ?? []).join('; '),
-        d.ai_recommendations ?? '',
-      )))
-    }
-
-    const csv = sheets.join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${athlete.first_name}_${athlete.last_name}_${anon.uid_code}_${now}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
 
   if (!athlete && !loading) {
     return (
@@ -2017,11 +1845,6 @@ export default function CaseFormulationPage() {
           <ArrowLeft size={16} /> Back to Athletes
         </button>
         <div className="flex gap-2 flex-wrap justify-end">
-          <Button variant="secondary" onClick={exportCSV}
-            className="border-green-300 text-green-700 hover:bg-green-50"
-            title="CSV export includes all data with athlete name (internal use)">
-            <Download size={16} /> Export CSV
-          </Button>
           <Button variant="secondary" onClick={exportFullReport}>
             <Download size={16} /> Export .txt
           </Button>
@@ -2076,9 +1899,6 @@ export default function CaseFormulationPage() {
                     { icon: Target, label: `${interventions.length} interventions` },
                     { icon: FileText, label: `${reports.length} reports` },
                     { icon: Folder, label: `${documents.length} documents` },
-                    ...(physioRecords.length > 0 ? [{ icon: Watch, label: `${physioRecords.length} physio` }] : []),
-                    ...(labSessions.length > 0 ? [{ icon: FlaskConical, label: `${labSessions.length} lab` }] : []),
-                    ...(perfProfiles.length > 0 ? [{ icon: Dumbbell, label: `${perfProfiles.length} profiles` }] : []),
                   ].map(({ icon: Icon, label }) => (
                     <span key={label} className="flex items-center gap-1 text-xs text-gray-500 bg-gray-50 border border-gray-100 px-2.5 py-1 rounded-full">
                       <Icon size={11} className="text-gray-400" />
@@ -2131,21 +1951,18 @@ export default function CaseFormulationPage() {
             {activeTab === 'checkins' && <CheckInsTab checkins={checkins} />}
             {activeTab === 'assessments' && <AssessmentsTab assessments={assessments} />}
             {activeTab === 'interventions' && <InterventionsTab interventions={interventions} />}
-            {activeTab === 'injury' && (
-              <InjuryPsychTab injuries={injuryRecords} readiness={psychReadiness} />
-            )}
-            {activeTab === 'consent' && (
-              <ConsentFormsTab forms={consentForms} />
-            )}
             {activeTab === 'reports' && <ReportsTab reports={reports} athlete={athlete} />}
+            {activeTab === 'injury' && (
+              <InjuryPsychTab injuryRecords={injuryRecords} psychReadiness={psychReadiness} />
+            )}
+            {activeTab === 'daily_logs' && (
+              <AthleteDailyLogsPanel athleteId={athleteId!} />
+            )}
             {activeTab === 'physio' && (
               <PhysioWearablesTab physioRecords={physioRecords} />
             )}
             {activeTab === 'lab' && (
               <LabTechTab labSessions={labSessions} />
-            )}
-            {activeTab === 'neuro' && (
-              <NeurocognitiveTab records={neuroRecords} />
             )}
             {activeTab === 'profiling' && (
               <PerfProfileTab profiles={perfProfiles} />
@@ -2169,8 +1986,7 @@ export default function CaseFormulationPage() {
             {activeTab === 'ai' && (
               <AISummaryTab athlete={athlete} sessions={sessions} checkins={checkins} physioRecords={physioRecords} labSessions={labSessions} perfProfiles={perfProfiles}
                 assessments={assessments} interventions={interventions} reports={reports}
-                documents={documents} neuroRecords={neuroRecords}
-                consentForms={consentForms} injuryRecords={injuryRecords} psychReadiness={psychReadiness} />
+                documents={documents} injuryRecords={injuryRecords} psychReadiness={psychReadiness} />
             )}
           </div>
 
@@ -2190,242 +2006,6 @@ export default function CaseFormulationPage() {
         }
       `}</style>
     </AppShell>
-  )
-}
-
-// ── Neurocognitive Tab ────────────────────────────────────────────────────────
-
-const SENAPTEC_SKILLS_CF = [
-  { key: 'visual_clarity',           label: 'Visual Clarity',          domain: 'visual' },
-  { key: 'contrast_sensitivity',     label: 'Contrast Sensitivity',    domain: 'visual' },
-  { key: 'near_far_quickness',       label: 'Near-Far Quickness',      domain: 'visual' },
-  { key: 'target_capture',           label: 'Target Capture',          domain: 'visual' },
-  { key: 'depth_sensitivity',        label: 'Depth Sensitivity',       domain: 'processing' },
-  { key: 'perception_span',          label: 'Perception Span',         domain: 'processing' },
-  { key: 'multiple_object_tracking', label: 'Multiple Object Tracking',domain: 'processing' },
-  { key: 'reaction_time',            label: 'Reaction Time',           domain: 'reaction' },
-  { key: 'peripheral_reaction',      label: 'Peripheral Reaction',     domain: 'reaction' },
-  { key: 'go_no_go',                 label: 'Go / No Go',              domain: 'reaction' },
-]
-
-const NEURO_DOMAIN_COLORS: Record<string, { bg: string; text: string; radar: string }> = {
-  visual:     { bg: 'bg-blue-50',   text: 'text-blue-700',   radar: '#3b82f6' },
-  processing: { bg: 'bg-purple-50', text: 'text-purple-700', radar: '#8b5cf6' },
-  reaction:   { bg: 'bg-green-50',  text: 'text-green-700',  radar: '#10b981' },
-}
-
-function getNeuroColor(pct: number) {
-  if (pct >= 75) return 'text-emerald-600'
-  if (pct >= 50) return 'text-blue-600'
-  if (pct >= 25) return 'text-amber-600'
-  return 'text-red-600'
-}
-function getNeuroLabel(pct: number) {
-  if (pct >= 90) return 'Excellent'
-  if (pct >= 75) return 'Above Avg'
-  if (pct >= 50) return 'Average'
-  if (pct >= 25) return 'Below Avg'
-  return 'Poor'
-}
-
-function NeurocognitiveTab({ records }: { records: any[] }) {
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-
-  if (records.length === 0) {
-    return (
-      <div className="flex flex-col items-center py-16 text-center">
-        <Eye size={40} className="text-gray-200 mb-3" />
-        <p className="text-sm text-gray-400">No neurocognitive assessments for this athlete.</p>
-        <p className="text-xs text-gray-300 mt-1">Log sessions via Neurocognitive in the sidebar.</p>
-      </div>
-    )
-  }
-
-  // Group by platform for a quick summary view
-  const byPlatform = records.reduce((acc: Record<string, any[]>, r: any) => {
-    const key = r.platform ?? 'Unknown'
-    if (!acc[key]) acc[key] = []
-    acc[key].push(r)
-    return acc
-  }, {})
-
-  return (
-    <div className="space-y-5">
-      <SectionHeader icon={Eye} title="Neurocognitive Assessments" count={records.length} color="blue" />
-
-      {/* Platform summary cards */}
-      <div className="grid sm:grid-cols-3 gap-3">
-        {Object.entries(byPlatform).map(([platform, recs]) => {
-          const latest = recs[0]
-          const scores = latest.senaptec_scores ?? {}
-          const vals = SENAPTEC_SKILLS_CF.map(s => scores[s.key]).filter((v): v is number => v != null)
-          const avg = vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null
-          return (
-            <Card key={platform} className="p-3">
-              <p className="text-xs font-semibold text-gray-700 truncate">{platform}</p>
-              <p className="text-xs text-gray-400 mt-0.5">{recs.length} session{recs.length > 1 ? 's' : ''} · Last {fmtDate(latest.test_date ?? latest.created_at)}</p>
-              {avg != null && (
-                <p className={`text-xl font-black mt-1 ${getNeuroColor(avg)}`}>
-                  {avg}<span className="text-xs font-normal text-gray-400">th %ile</span>
-                </p>
-              )}
-              {latest.context && (
-                <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full capitalize">{latest.context.replace(/_/g,' ')}</span>
-              )}
-            </Card>
-          )
-        })}
-      </div>
-
-      {/* Latest SENAPTEC radar — if available */}
-      {(() => {
-        const latestSenaptec = records.find(r => r.platform === 'SENAPTEC Sensory Station' && r.senaptec_scores)
-        if (!latestSenaptec) return null
-        const scores = latestSenaptec.senaptec_scores
-        const radarData = SENAPTEC_SKILLS_CF
-          .filter(s => scores[s.key] != null)
-          .map(s => ({ skill: s.label.split(' ')[0], percentile: scores[s.key], fullMark: 100 }))
-        if (radarData.length < 3) return null
-        return (
-          <Card className="p-4">
-            <p className="text-sm font-semibold text-gray-900 mb-1">SENAPTEC Latest Profile</p>
-            <p className="text-xs text-gray-400 mb-3">vs {latestSenaptec.comparison_group} · {fmtDate(latestSenaptec.test_date ?? latestSenaptec.created_at)}</p>
-
-            {/* Domain domain averages */}
-            <div className="flex gap-2 mb-4">
-              {(['visual','processing','reaction'] as const).map(domain => {
-                const dc = NEURO_DOMAIN_COLORS[domain]
-                const domainSkills = SENAPTEC_SKILLS_CF.filter(s => s.domain === domain)
-                const vals = domainSkills.map(s => scores[s.key]).filter((v): v is number => v != null)
-                if (!vals.length) return null
-                const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
-                return (
-                  <div key={domain} className={`flex-1 text-center p-2 rounded-lg ${dc.bg}`}>
-                    <p className={`text-sm font-bold ${dc.text}`}>{avg}th</p>
-                    <p className={`text-xs capitalize ${dc.text}`}>{domain}</p>
-                  </div>
-                )
-              })}
-            </div>
-
-            <div className="grid sm:grid-cols-2 gap-4">
-              {/* Radar */}
-              <ResponsiveContainer width="100%" height={200}>
-                <RadarChart data={radarData} margin={{ top: 5, right: 25, bottom: 5, left: 25 }}>
-                  <PolarGrid stroke="#e5e7eb" />
-                    <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
-                  <PolarAngleAxis dataKey="skill" tick={{ fontSize: 9, fill: '#6b7280' }} />
-                  <Radar dataKey="percentile" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} strokeWidth={2} />
-                </RadarChart>
-              </ResponsiveContainer>
-
-              {/* Skill bars */}
-              <div className="space-y-1.5">
-                {SENAPTEC_SKILLS_CF.filter(s => scores[s.key] != null).map(s => {
-                  const pct = scores[s.key]
-                  return (
-                    <div key={s.key} className="flex items-center gap-2">
-                      <span className="text-xs text-gray-500 w-28 shrink-0 truncate">{s.label}</span>
-                      <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-                        <div className={`h-1.5 rounded-full ${pct >= 50 ? 'bg-blue-500' : 'bg-amber-400'}`} style={{ width: `${pct}%` }} />
-                      </div>
-                      <span className={`text-xs font-semibold w-16 text-right shrink-0 ${getNeuroColor(pct)}`}>{pct}th · {getNeuroLabel(pct)}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </Card>
-        )
-      })()}
-
-      {/* Full session history */}
-      <div className="space-y-3">
-        {records.map((r: any) => {
-          const isExp = expandedId === r.id
-          const scores = r.senaptec_scores ?? {}
-          const vals = SENAPTEC_SKILLS_CF.map(s => scores[s.key]).filter((v): v is number => v != null)
-          const avg = vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null
-          return (
-            <Card key={r.id} className="p-4">
-              <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpandedId(isExp ? null : r.id)}>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">{r.platform}</p>
-                  <p className="text-xs text-gray-400">
-                    {fmtDate(r.test_date ?? r.created_at)}
-                    {r.context ? ` · ${r.context.replace(/_/g,' ')}` : ''}
-                    {r.comparison_group ? ` · vs ${r.comparison_group}` : ''}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  {avg != null && (
-                    <div className="text-right">
-                      <p className={`text-lg font-black ${getNeuroColor(avg)}`}>{avg}<span className="text-xs font-normal text-gray-400">th</span></p>
-                      <p className="text-xs text-gray-400">avg %ile</p>
-                    </div>
-                  )}
-                  <ChevronRight size={15} className={`text-gray-400 transition-transform ${isExp ? 'rotate-90' : ''}`} />
-                </div>
-              </div>
-
-              {isExp && (
-                <div className="mt-4 border-t pt-4 space-y-3">
-                  {/* SENAPTEC skills breakdown */}
-                  {r.senaptec_scores && (
-                    <div>
-                      {(['visual','processing','reaction'] as const).map(domain => {
-                        const dc = NEURO_DOMAIN_COLORS[domain]
-                        const domainSkills = SENAPTEC_SKILLS_CF.filter(s => s.domain === domain && scores[s.key] != null)
-                        if (!domainSkills.length) return null
-                        return (
-                          <div key={domain} className="mb-3">
-                            <p className={`text-xs font-semibold uppercase tracking-wide mb-1.5 capitalize ${dc.text}`}>{domain} Skills</p>
-                            {domainSkills.map(s => {
-                              const pct = scores[s.key]
-                              return (
-                                <div key={s.key} className="flex items-center gap-2 mb-1">
-                                  <span className="text-xs text-gray-500 w-36 shrink-0">{s.label}</span>
-                                  <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-                                    <div className={`h-1.5 rounded-full ${pct >= 50 ? 'bg-blue-500' : 'bg-amber-400'}`} style={{ width: `${pct}%` }} />
-                                  </div>
-                                  <span className={`text-xs font-semibold w-20 text-right ${getNeuroColor(pct)}`}>{pct}th · {getNeuroLabel(pct)}</span>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-
-                  {/* Custom metrics for non-SENAPTEC platforms */}
-                  {r.custom_metrics && r.custom_metrics.length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Metrics</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {r.custom_metrics.filter((m: any) => m.name).map((m: any, i: number) => (
-                          <div key={i} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                            <span className="text-xs text-gray-600 truncate">{m.name}</span>
-                            <span className="text-xs font-bold text-gray-900 ml-2 shrink-0">{m.value} <span className="font-normal text-gray-400">{m.unit}</span></span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {r.notes && (
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <p className="text-xs font-semibold text-gray-500 mb-1">Clinical Notes</p>
-                      <p className="text-sm text-gray-700">{r.notes}</p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </Card>
-          )
-        })}
-      </div>
-    </div>
   )
 }
 
@@ -2557,88 +2137,6 @@ function LabTechTab({ labSessions }: { labSessions: any[] }) {
   )
 }
 
-// ── Injury Psychology Tab ──────────────────────────────────────────────────────
-
-function InjuryPsychTab({ injuries, readiness }: { injuries: any[]; readiness: any[] }) {
-  if (injuries.length === 0 && readiness.length === 0) return <EmptyData message="No injury records or readiness assessments for this athlete." />
-  return (
-    <div className="space-y-6">
-      <SectionHeader icon={Heart} title="Injury Records" count={injuries.length} color="rose" />
-      {injuries.map((inj: any) => (
-        <Card key={inj.id} className="p-4">
-          <div className="flex items-start justify-between mb-2">
-            <div>
-              <p className="font-semibold text-gray-900">{inj.diagnosis_text}</p>
-              <p className="text-xs text-gray-500">{inj.osiics_code_1 ? `OSIICS: ${inj.osiics_code_1}` : ''} {inj.osiics_body_part_1 ?? ''}</p>
-            </div>
-            <div className="flex gap-2">
-              <Badge label={inj.severity} className={inj.severity === 'severe' || inj.severity === 'career_threatening' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'} />
-              <Badge label={inj.status} className="bg-gray-100 text-gray-700" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs text-gray-600 mt-3">
-            <div><span className="text-gray-400">Date: </span>{fmtDate(inj.date_of_injury)}</div>
-            <div><span className="text-gray-400">Context: </span>{inj.context}</div>
-            <div><span className="text-gray-400">Mechanism: </span>{inj.mechanism}</div>
-            <div><span className="text-gray-400">Missed: </span>{inj.missed_days ?? '—'} days / {inj.missed_matches ?? '—'} matches</div>
-          </div>
-          {inj.date_of_return && <p className="text-xs text-green-600 mt-2">✓ Returned: {fmtDate(inj.date_of_return)}</p>}
-          {inj.psych_referral_needed && <p className="text-xs text-red-600 mt-1 font-semibold">⚠ Psychological referral needed</p>}
-          {inj.notes && <p className="text-xs text-gray-400 mt-2 italic">{inj.notes}</p>}
-        </Card>
-      ))}
-
-      {readiness.length > 0 && (
-        <>
-          <SectionHeader icon={TrendingUp} title="Psychological Readiness to Return" count={readiness.length} color="teal" />
-          {readiness.map((pr: any) => (
-            <Card key={pr.id} className="p-4">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-sm font-semibold text-gray-700">{fmtDate(pr.assessed_at)}</p>
-                <Badge label={pr.ready_to_return ? '✓ Ready' : '✗ Not Ready'} className={pr.ready_to_return ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'} />
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <StatCard label="ACL-RSI" value={pr.acl_rsi_total} sub="/ 100" />
-                <StatCard label="TSK" value={pr.tsk_total} sub="kinesiophobia" />
-                <StatCard label="SIRSI" value={pr.sirsi_total} />
-                <StatCard label="Overall" value={`${pr.overall_readiness}%`} />
-              </div>
-              {pr.notes && <p className="text-xs text-gray-400 mt-3 italic">{pr.notes}</p>}
-            </Card>
-          ))}
-        </>
-      )}
-    </div>
-  )
-}
-
-// ── Consent Forms Tab ─────────────────────────────────────────────────────────
-
-function ConsentFormsTab({ forms }: { forms: any[] }) {
-  if (forms.length === 0) return <EmptyData message="No consent forms for this athlete." />
-  const stColor: Record<string, string> = { signed: 'bg-green-100 text-green-700', pending: 'bg-amber-100 text-amber-700', expired: 'bg-red-100 text-red-700', uploaded: 'bg-blue-100 text-blue-700' }
-  return (
-    <div className="space-y-4">
-      <SectionHeader icon={Shield} title="Consent Forms" count={forms.length} color="indigo" />
-      {forms.map((f: any) => (
-        <Card key={f.id} className="p-4">
-          <div className="flex items-center justify-between mb-2">
-            <p className="font-semibold text-gray-900 text-sm">{f.form_type.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</p>
-            <Badge label={f.status} className={stColor[f.status] ?? 'bg-gray-100 text-gray-600'} />
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
-            {f.signed_by && <div><span className="text-gray-400">Signed by: </span>{f.signed_by}</div>}
-            {f.signed_at && <div><span className="text-gray-400">Signed: </span>{fmtDate(f.signed_at)}</div>}
-            {f.valid_until && <div><span className="text-gray-400">Valid until: </span>{fmtDate(f.valid_until)}</div>}
-            {f.guardian_name && <div><span className="text-gray-400">Guardian: </span>{f.guardian_name} ({f.guardian_relationship})</div>}
-          </div>
-          {f.notes && <p className="text-xs text-gray-400 mt-2 italic">{f.notes}</p>}
-        </Card>
-      ))}
-    </div>
-  )
-}
-
 // ── Performance Profile Tab ───────────────────────────────────────────────────
 
 const DOMAIN_LABELS: Record<string, string> = {
@@ -2689,7 +2187,6 @@ function PerfProfileTab({ profiles }: { profiles: any[] }) {
                 <ResponsiveContainer width="100%" height={160}>
                   <RadarChart data={radarData} margin={{ top: 5, right: 20, bottom: 5, left: 20 }}>
                     <PolarGrid stroke="#e5e7eb" />
-                    <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
                     <PolarAngleAxis dataKey="subject" tick={{ fontSize: 9, fill: '#6b7280' }} />
                     <Radar dataKey="value" stroke={color} fill={color} fillOpacity={0.25} strokeWidth={2} />
                   </RadarChart>
@@ -2700,6 +2197,167 @@ function PerfProfileTab({ profiles }: { profiles: any[] }) {
           )
         })}
       </div>
+    </div>
+  )
+}
+
+// ── Injury Psychology Tab ─────────────────────────────────────────────────────
+
+const SEVERITY_COLORS: Record<string, string> = {
+  minimal: 'bg-green-100 text-green-700',
+  mild: 'bg-lime-100 text-lime-700',
+  moderate: 'bg-amber-100 text-amber-700',
+  severe: 'bg-red-100 text-red-700',
+  career_threatening: 'bg-red-200 text-red-900',
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  acute: 'bg-red-100 text-red-700',
+  subacute: 'bg-orange-100 text-orange-700',
+  chronic: 'bg-amber-100 text-amber-700',
+  recovered: 'bg-green-100 text-green-700',
+  reinjury: 'bg-rose-100 text-rose-900',
+}
+
+function InjuryPsychTab({ injuryRecords, psychReadiness }: { injuryRecords: any[], psychReadiness: any[] }) {
+  if (injuryRecords.length === 0 && psychReadiness.length === 0) {
+    return (
+      <div className="flex flex-col items-center py-16 text-center">
+        <Bandage size={40} className="text-gray-200 mb-3" />
+        <p className="text-sm text-gray-400">No injury records for this athlete.</p>
+        <p className="text-xs text-gray-300 mt-1">Log injuries via Injury Psychology in the sidebar.</p>
+      </div>
+    )
+  }
+
+  const active = injuryRecords.filter(r => r.status !== 'recovered')
+  const avgReadiness = psychReadiness.length
+    ? (psychReadiness.reduce((a, r) => a + r.overall_readiness, 0) / psychReadiness.length).toFixed(0)
+    : null
+  const latestRTP = psychReadiness[0]
+
+  return (
+    <div className="space-y-5">
+      <SectionHeader icon={Bandage} title="Injury Psychology" color="red" />
+
+      {/* Summary strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card className="p-3 text-center">
+          <p className="text-2xl font-black text-gray-900">{injuryRecords.length}</p>
+          <p className="text-xs text-gray-400 mt-0.5">Total Injuries</p>
+        </Card>
+        <Card className="p-3 text-center">
+          <p className="text-2xl font-black text-amber-600">{active.length}</p>
+          <p className="text-xs text-gray-400 mt-0.5">Active / Ongoing</p>
+        </Card>
+        <Card className="p-3 text-center">
+          <p className="text-2xl font-black text-purple-600">{psychReadiness.length}</p>
+          <p className="text-xs text-gray-400 mt-0.5">Readiness Assessments</p>
+        </Card>
+        <Card className={`p-3 text-center ${latestRTP?.ready_to_return ? 'border-green-200 bg-green-50' : latestRTP ? 'border-red-200 bg-red-50' : ''}`}>
+          <p className={`text-2xl font-black ${latestRTP?.ready_to_return ? 'text-green-600' : latestRTP ? 'text-red-600' : 'text-gray-300'}`}>
+            {avgReadiness ? `${avgReadiness}%` : '—'}
+          </p>
+          <p className="text-xs text-gray-400 mt-0.5">Avg Readiness</p>
+        </Card>
+      </div>
+
+      {/* Latest RTP banner */}
+      {latestRTP && (
+        <div className={`rounded-xl border p-4 flex items-center gap-3 ${latestRTP.ready_to_return ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${latestRTP.ready_to_return ? 'bg-green-100' : 'bg-red-100'}`}>
+            {latestRTP.ready_to_return
+              ? <CheckCircle size={20} className="text-green-600" />
+              : <AlertTriangle size={20} className="text-red-600" />}
+          </div>
+          <div className="flex-1">
+            <p className={`text-sm font-bold ${latestRTP.ready_to_return ? 'text-green-700' : 'text-red-700'}`}>
+              Latest Assessment: {latestRTP.ready_to_return ? 'CLEARED for Return to Play' : 'NOT YET CLEARED for Return to Play'}
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {fmtDate(latestRTP.assessed_at)} · Overall readiness: {latestRTP.overall_readiness}% ·
+              ACL-RSI: {latestRTP.acl_psych_total ?? '—'} · SFK-11: {latestRTP.sfk_total ?? '—'} · TFSI-R: {latestRTP.tfsi_r_total ?? '—'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Injury records */}
+      {injuryRecords.length > 0 && (
+        <div className="space-y-3">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Injury Log</p>
+          {injuryRecords.map((r: any) => (
+            <Card key={r.id} className={`p-4 ${r.psych_referral_needed ? 'border-amber-200' : ''}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    {r.osiics_code_1 && (
+                      <span className="text-xs font-mono font-bold bg-purple-100 text-purple-700 px-2 py-0.5 rounded">{r.osiics_code_1}</span>
+                    )}
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${SEVERITY_COLORS[r.severity] ?? 'bg-gray-100 text-gray-600'}`}>{r.severity}</span>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[r.status] ?? 'bg-gray-100 text-gray-600'}`}>{r.status}</span>
+                    {r.psych_referral_needed && (
+                      <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <AlertTriangle size={10} /> Psych referral needed
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {r.osiics_diagnosis_1 ?? r.diagnosis_text}
+                  </p>
+                  {r.osiics_body_part_1 && (
+                    <p className="text-xs text-gray-400">{r.osiics_body_part_1} · {r.osiics_injury_type_1}</p>
+                  )}
+                </div>
+                <div className="text-right shrink-0 text-xs text-gray-400">
+                  <p className="font-medium text-gray-700">{fmtDate(r.date_of_injury)}</p>
+                  {r.missed_days != null && <p>{r.missed_days}d missed</p>}
+                  {r.missed_matches != null && <p>{r.missed_matches} matches</p>}
+                </div>
+              </div>
+              {r.notes && <p className="text-xs text-gray-500 mt-2 italic">{r.notes}</p>}
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Readiness assessments */}
+      {psychReadiness.length > 0 && (
+        <div className="space-y-3">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Psychological Readiness History</p>
+          {psychReadiness.map((r: any) => {
+            const col = r.overall_readiness >= 70 ? 'text-green-600' : r.overall_readiness >= 50 ? 'text-amber-600' : 'text-red-600'
+            return (
+              <Card key={r.id} className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-semibold text-gray-700">{fmtDate(r.assessed_at)}</p>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-xl font-black ${col}`}>{r.overall_readiness}%</span>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.ready_to_return ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      {r.ready_to_return ? '✓ RTP Cleared' : '✗ Not Cleared'}
+                    </span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="bg-gray-50 rounded-lg p-2">
+                    <p className="text-xs text-gray-400">ACL-RSI</p>
+                    <p className="font-bold text-gray-800">{r.acl_psych_total ?? '—'}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-2">
+                    <p className="text-xs text-gray-400">SFK-11</p>
+                    <p className="font-bold text-gray-800">{r.sfk_total ?? '—'}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-2">
+                    <p className="text-xs text-gray-400">TFSI-R</p>
+                    <p className="font-bold text-gray-800">{r.tfsi_r_total ?? '—'}</p>
+                  </div>
+                </div>
+                {r.notes && <p className="text-xs text-gray-500 mt-2 italic">{r.notes}</p>}
+              </Card>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
