@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { useAthletes } from '@/hooks/useAthletes'
 import { useAuth } from '@/contexts/AuthContext'
 import { fmtDate } from '@/lib/utils'
+import ShareReportButton from '@/components/practitioner/ShareReportButton'
 import { callGroq } from '@/lib/groq'
 import type { Report, ReportType } from '@/types'
 
@@ -175,8 +176,6 @@ export default function ReportsPage() {
   const [aiGenerated, setAiGenerated] = useState(false)
   const [filterAthleteId, setFilterAthleteId] = useState('')
   const [generatingStatus, setGeneratingStatus] = useState('')
-  const [saveError, setSaveError] = useState('')
-  const [generateError, setGenerateError] = useState('')
 
   const [form, setForm] = useState({
     athlete_id: '',
@@ -209,7 +208,6 @@ export default function ReportsPage() {
     if (!user) return
     setGenerating(true)
     setAiGenerated(false)
-    setGenerateError('')
     setGeneratingStatus('Fetching athlete data…')
     try {
       // Pull real athlete data
@@ -248,8 +246,6 @@ Write in third person, professional clinical language. Use the real scores and d
         title: f.title || `${form.report_type.replace(/_/g, ' ')} Report${athleteName ? ` — ${athleteName}` : ''} · ${new Date().toLocaleDateString()}`,
       }))
       setAiGenerated(true)
-    } catch (err: any) {
-      setGenerateError('AI generation failed: ' + (err?.message ?? 'unknown error. Check your Groq API key in Settings.'))
     } finally {
       setGenerating(false)
       setGeneratingStatus('')
@@ -259,7 +255,6 @@ Write in third person, professional clinical language. Use the real scores and d
   async function handleSave() {
     if (!form.title || !form.content) return
     setSaving(true)
-    setSaveError('')
     try {
       await createReport.mutateAsync({
         ...form,
@@ -267,8 +262,6 @@ Write in third person, professional clinical language. Use the real scores and d
         is_ai_generated: aiGenerated,
       })
       setModalOpen(false)
-    } catch (err: any) {
-      setSaveError('Save failed: ' + (err?.message ?? 'unknown error'))
     } finally {
       setSaving(false)
     }
@@ -314,6 +307,16 @@ Write in third person, professional clinical language. Use the real scores and d
                   <button onClick={() => printReport(r)} className="p-1.5 text-gray-400 hover:text-gray-600 rounded" title="Print / PDF">
                     <Printer size={15} />
                   </button>
+                  {(r as any).athlete?.id && (
+                    <ShareReportButton
+                      reportId={r.id}
+                      reportTitle={r.title}
+                      reportType={r.report_type}
+                      reportContent={r.content}
+                      athleteId={(r as any).athlete.id}
+                      athleteName={`${(r as any).athlete.first_name} ${(r as any).athlete.last_name}`}
+                    />
+                  )}
                 </div>
               </div>
             </Card>
@@ -349,9 +352,6 @@ Write in third person, professional clinical language. Use the real scores and d
               {generating ? generatingStatus || 'Generating…' : 'AI Generate'}
             </Button>
           </div>
-          {generateError && (
-            <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{generateError}</p>
-          )}
           <Textarea value={form.content}
             onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
             rows={12} placeholder="Write or AI-generate report content…" />
@@ -360,11 +360,8 @@ Write in third person, professional clinical language. Use the real scores and d
               <Sparkles size={11} /> Generated using real athlete data — review before saving
             </p>
           )}
-          {saveError && (
-            <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{saveError}</p>
-          )}
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" onClick={() => { setModalOpen(false); setSaveError(''); setGenerateError('') }}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} loading={saving} disabled={!form.title || !form.content}>
               Save Report
             </Button>
@@ -376,13 +373,23 @@ Write in third person, professional clinical language. Use the real scores and d
       <Modal open={!!viewReport} onClose={() => setViewReport(null)} title={viewReport?.title ?? ''} maxWidth="max-w-2xl">
         {viewReport && (
           <div>
-            <div className="flex gap-2 mb-4">
+            <div className="flex gap-2 mb-4 flex-wrap">
               <Button variant="secondary" size="sm" onClick={() => exportReportTxt(viewReport)}>
                 <Download size={13} /> Download
               </Button>
               <Button variant="secondary" size="sm" onClick={() => printReport(viewReport)}>
                 <Printer size={13} /> Print / PDF
               </Button>
+              {(viewReport as any).athlete?.id && (
+                <ShareReportButton
+                  reportId={viewReport.id}
+                  reportTitle={viewReport.title}
+                  reportType={viewReport.report_type}
+                  reportContent={viewReport.content}
+                  athleteId={(viewReport as any).athlete.id}
+                  athleteName={`${(viewReport as any).athlete.first_name} ${(viewReport as any).athlete.last_name}`}
+                />
+              )}
             </div>
             <div className="prose prose-sm max-w-none text-sm leading-relaxed"
               dangerouslySetInnerHTML={{ __html: renderMarkdown(viewReport.content) }} />
