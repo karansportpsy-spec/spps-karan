@@ -35,7 +35,7 @@ const TABS = [
   { id: 'reports',       label: 'Reports',        icon: FileText },
   { id: 'documents',     label: 'Documents',      icon: Folder },
   { id: 'injury',        label: 'Injury Psychology',  icon: Heart },
-  { id: 'daily_logs',    label: 'Daily Logs',         icon: BookOpen },
+  { id: 'daily_logs',    label: 'Daily Logs',         icon: Book },
   { id: 'physio',        label: 'Physio & Wearables', icon: Activity },
   { id: 'lab',           label: 'Lab Technology',  icon: FlaskConical },
   { id: 'profiling',     label: 'Performance Profile', icon: Target },
