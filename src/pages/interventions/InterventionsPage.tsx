@@ -11,12 +11,19 @@ import {
   Target, Users, Heart, Zap, Shield, Activity, Sparkles,
   Clock, FileText, AlertTriangle,
 } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import AppShell from '@/components/layout/AppShell'
 import { PageHeader, Button, Card, Badge, Avatar, Modal, Select, Input, Textarea, Spinner, EmptyState } from '@/components/ui'
 import { useInterventions, useCreateIntervention, useUpdateIntervention } from '@/hooks/useData'
 import { useAthletes } from '@/hooks/useAthletes'
 import { fmtDate } from '@/lib/utils'
 import type { InterventionCategory, Intervention } from '@/types'
+import {
+  addInterventionProgress,
+  assignInterventionProgram,
+  getInterventionAssignments,
+  type InterventionAssignment,
+} from '@/services/interventionsApi'
 
 const EVIDENCE_COLORS: Record<string, string> = {
   'Strong':       'bg-emerald-100 text-emerald-700 border-emerald-200',
@@ -639,7 +646,7 @@ function ProtocolBuilder({ athletes, initialFramework, onCreate, onCancel }: {
         ...sessions.map((s, i) => (i + 1) + '. ' + s),
         notes ? '\nNOTES:\n' + notes : '',
       ].filter(Boolean).join('\n')
-      await onCreate({ athlete_id: athleteId, category: fw.category, title, description: fw.theory.slice(0, 200), protocol, rating: null, notes })
+      await onCreate({ athlete_id: athleteId, category: fw.category, title, description: fw.theory.slice(0, 200), protocol, rating: 0, notes })
     } catch (err: any) {
       setSaveError('Save failed: ' + (err?.message ?? 'unknown error')); setSaving(false)
     }
@@ -754,6 +761,7 @@ function ProtocolBuilder({ athletes, initialFramework, onCreate, onCancel }: {
 type MainTab = 'library' | 'builder' | 'my'
 
 export default function InterventionsPage() {
+  const queryClient = useQueryClient()
   const { data: interventions = [], isLoading } = useInterventions()
   const { data: athletes = [] } = useAthletes()
   const createIntervention = useCreateIntervention()
@@ -769,29 +777,113 @@ export default function InterventionsPage() {
   const [editing, setEditing] = useState<Intervention | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
+  const [assigningInterventionId, setAssigningInterventionId] = useState<string | null>(null)
+  const [progressDrafts, setProgressDrafts] = useState<
+    Record<string, { progressPercentage: number; status: 'in_progress' | 'completed' | 'blocked'; progressNote: string }>
+  >({})
   const [form, setForm] = useState({
     athlete_id: '', category: 'Cognitive Restructuring' as InterventionCategory,
-    title: '', description: '', protocol: '', rating: null, notes: '',
+    title: '', description: '', protocol: '', rating: 0, notes: '',
+  })
+
+  const { data: assignments = [], isLoading: assignmentsLoading } = useQuery({
+    queryKey: ['intervention_assignments'],
+    queryFn: () => getInterventionAssignments(),
+  })
+
+  const progressMutation = useMutation({
+    mutationFn: ({
+      assignmentId,
+      payload,
+    }: {
+      assignmentId: string
+      payload: { progressPercentage: number; status: 'in_progress' | 'completed' | 'blocked'; progressNote?: string }
+    }) => addInterventionProgress(assignmentId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['intervention_assignments'] })
+    },
   })
 
   function openCreate() {
     setEditing(null)
-    setForm({ athlete_id: '', category: 'Cognitive Restructuring', title: '', description: '', protocol: '', rating: null, notes: '' })
+    setForm({ athlete_id: '', category: 'Cognitive Restructuring', title: '', description: '', protocol: '', rating: 0, notes: '' })
     setModalOpen(true)
   }
   function openEdit(i: Intervention) {
     setEditing(i)
-    setForm({ athlete_id: i.athlete_id, category: i.category, title: i.title, description: i.description ?? '', protocol: i.protocol ?? '', rating: i.rating || null, notes: i.notes ?? '' })
+    setForm({ athlete_id: i.athlete_id, category: i.category, title: i.title, description: i.description ?? '', protocol: i.protocol ?? '', rating: i.rating ?? 0, notes: i.notes ?? '' })
     setModalOpen(true)
   }
   function set(k: string) { return (e: React.ChangeEvent<any>) => setForm(f => ({ ...f, [k]: e.target.value })) }
 
+  function getProgressDraft(assignment: InterventionAssignment) {
+    return (
+      progressDrafts[assignment.id] ?? {
+        progressPercentage: Number(assignment.completion_percentage || 0),
+        status: assignment.status === 'completed' ? 'completed' : 'in_progress',
+        progressNote: '',
+      }
+    )
+  }
+
+  function patchProgressDraft(
+    assignmentId: string,
+    patch: Partial<{ progressPercentage: number; status: 'in_progress' | 'completed' | 'blocked'; progressNote: string }>
+  ) {
+    setProgressDrafts((prev) => {
+      const current = prev[assignmentId] ?? { progressPercentage: 0, status: 'in_progress', progressNote: '' }
+      return {
+        ...prev,
+        [assignmentId]: { ...current, ...patch },
+      }
+    })
+  }
+
+  async function handleAssignInterventionProgram(intervention: Intervention) {
+    try {
+      setAssigningInterventionId(intervention.id)
+      await assignInterventionProgram({
+        athleteId: intervention.athlete_id,
+        title: intervention.title,
+        description: intervention.description || intervention.protocol || '',
+        milestones: intervention.protocol
+          ? intervention.protocol
+              .split('\n')
+              .map((line) => line.trim())
+              .filter(Boolean)
+              .slice(0, 8)
+          : [],
+      })
+      queryClient.invalidateQueries({ queryKey: ['intervention_assignments'] })
+    } catch (err: any) {
+      alert(err?.message ?? 'Failed to assign intervention program.')
+    } finally {
+      setAssigningInterventionId(null)
+    }
+  }
+
+  async function handleUpdateProgress(assignment: InterventionAssignment) {
+    const draft = getProgressDraft(assignment)
+    try {
+      await progressMutation.mutateAsync({
+        assignmentId: assignment.id,
+        payload: {
+          progressPercentage: Number(draft.progressPercentage),
+          status: draft.status,
+          progressNote: draft.progressNote || undefined,
+        },
+      })
+      patchProgressDraft(assignment.id, { progressNote: '' })
+    } catch (err: any) {
+      alert(err?.message ?? 'Failed to update progress.')
+    }
+  }
+
   async function handleSave() {
     setSaving(true); setSaveError('')
-    const payload = { ...form, rating: form.rating || null }
     try {
-      if (editing) await updateIntervention.mutateAsync({ id: editing.id, ...payload })
-      else await createIntervention.mutateAsync(payload)
+      if (editing) await updateIntervention.mutateAsync({ id: editing.id, ...form })
+      else await createIntervention.mutateAsync(form)
       setModalOpen(false)
     } catch (err: any) {
       setSaveError('Save failed: ' + (err?.message ?? 'unknown error'))
@@ -919,6 +1011,99 @@ export default function InterventionsPage() {
 
       {tab === 'my' && (
         <>
+          <div className="mb-6">
+            <Card className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="font-semibold text-gray-900">Assigned Programs & Progress</p>
+                  <p className="text-xs text-gray-500">Athletes can view these in their portal. Update progress here in real time.</p>
+                </div>
+                <Badge label={`${assignments.length} active`} className="bg-blue-100 text-blue-700" />
+              </div>
+
+              {assignmentsLoading ? (
+                <div className="flex justify-center py-6"><Spinner size="md" /></div>
+              ) : assignments.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  No assigned programs yet. Use “Assign Program” on an intervention card below.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {assignments.slice(0, 12).map((assignment) => {
+                    const draft = getProgressDraft(assignment)
+                    return (
+                      <div key={assignment.id} className="border border-gray-100 rounded-xl p-3">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-gray-900 truncate">{assignment.title}</p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {assignment.athlete_first_name || ''} {assignment.athlete_last_name || ''} · Assigned {fmtDate(assignment.assigned_at)}
+                            </p>
+                          </div>
+                          <span className="text-xs font-semibold text-gray-600">
+                            {Math.round(Number(assignment.completion_percentage || 0))}%
+                          </span>
+                        </div>
+
+                        <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden mb-2">
+                          <div
+                            className="h-2 bg-blue-500"
+                            style={{ width: `${Math.max(0, Math.min(100, Number(assignment.completion_percentage || 0)))}%` }}
+                          />
+                        </div>
+
+                        <div className="grid sm:grid-cols-4 gap-2">
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={draft.progressPercentage}
+                            onChange={(e) =>
+                              patchProgressDraft(assignment.id, {
+                                progressPercentage: Math.max(0, Math.min(100, Number(e.target.value || 0))),
+                              })
+                            }
+                            className="text-sm border border-gray-200 rounded-lg px-2 py-1.5"
+                            placeholder="%"
+                          />
+                          <select
+                            value={draft.status}
+                            onChange={(e) =>
+                              patchProgressDraft(assignment.id, {
+                                status: e.target.value as 'in_progress' | 'completed' | 'blocked',
+                              })
+                            }
+                            className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white"
+                          >
+                            <option value="in_progress">In progress</option>
+                            <option value="completed">Completed</option>
+                            <option value="blocked">Blocked</option>
+                          </select>
+                          <input
+                            value={draft.progressNote}
+                            onChange={(e) => patchProgressDraft(assignment.id, { progressNote: e.target.value })}
+                            className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 sm:col-span-2"
+                            placeholder="Progress note"
+                          />
+                        </div>
+
+                        <div className="mt-2 flex justify-end">
+                          <Button
+                            size="sm"
+                            onClick={() => handleUpdateProgress(assignment)}
+                            loading={progressMutation.isPending}
+                          >
+                            Update Progress
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </Card>
+          </div>
+
           {isLoading ? <div className="flex justify-center py-16"><Spinner size="lg" /></div>
            : interventions.length === 0
              ? <EmptyState icon={<Lightbulb size={48} />} title="No interventions logged yet"
@@ -950,6 +1135,19 @@ export default function InterventionsPage() {
                      </div>
                      {i.description && <p className="text-xs text-gray-500 mt-2 line-clamp-2">{i.description}</p>}
                      {i.protocol && <p className="text-xs text-blue-400 mt-1 flex items-center gap-1"><ClipboardList size={10} /> Protocol attached</p>}
+                     <div className="mt-2">
+                       <button
+                         type="button"
+                         onClick={(e) => {
+                           e.stopPropagation()
+                           handleAssignInterventionProgram(i)
+                         }}
+                         disabled={assigningInterventionId === i.id}
+                         className="text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1.5 hover:bg-blue-100 disabled:opacity-60"
+                       >
+                         {assigningInterventionId === i.id ? 'Assigning...' : 'Assign Program'}
+                       </button>
+                     </div>
                    </Card>
                  ))}
                </div>
@@ -973,7 +1171,7 @@ export default function InterventionsPage() {
           <Textarea label="Clinical Notes" value={form.notes} onChange={set('notes') as any} rows={2} />
           <div>
             <p className="text-sm font-medium text-gray-700 mb-1">Effectiveness Rating</p>
-            <StarRating value={form.rating ?? 0} onChange={v => setForm(f => ({ ...f, rating: v }))} />
+            <StarRating value={form.rating} onChange={v => setForm(f => ({ ...f, rating: v }))} />
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => { setModalOpen(false); setSaveError('') }}>Cancel</Button>

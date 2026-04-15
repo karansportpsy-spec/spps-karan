@@ -13,6 +13,7 @@ import type { Athlete, RiskLevel, AthleteStatus } from '@/types'
 import AthleteImportModal from '@/components/AthleteImportModal'
 import EnableAthletePortal from '@/components/EnableAthletePortal'
 import { generateAthleteUID, needsUID } from '@/lib/athleteUID'
+import { downloadAthletesCsv, downloadAthleteCsv } from '@/services/athletesApi'
 
 const BLANK: Omit<Athlete, 'id' | 'practitioner_id' | 'created_at' | 'updated_at'> = {
   first_name: '', last_name: '', email: '', phone: '', sport: '', team: '',
@@ -193,6 +194,7 @@ export default function AthletesPage() {
 
   // Export state
   const [exporting, setExporting] = useState(false)
+  const [exportingAthleteId, setExportingAthleteId] = useState<string | null>(null)
 
   function openCreate() { setEditing(null); setForm(BLANK); setModalOpen(true) }
   function openEdit(a: Athlete) { setEditing(a); setForm({ ...a }); setModalOpen(true) }
@@ -232,9 +234,22 @@ export default function AthletesPage() {
     try {
       const toExport = mode === 'all' ? filtered : filtered.filter(a => selectedIds.has(a.id))
       if (!toExport.length) { alert('No athletes to export.'); return }
-      await exportFullCSV(toExport, user.id)
+      await downloadAthletesCsv(mode === 'selected' ? toExport.map((a) => a.id) : undefined)
+    } catch (err: any) {
+      alert(err?.message ?? 'Export failed.')
     } finally {
       setExporting(false)
+    }
+  }
+
+  async function handleSingleExport(athleteId: string) {
+    setExportingAthleteId(athleteId)
+    try {
+      await downloadAthleteCsv(athleteId)
+    } catch (err: any) {
+      alert(err?.message ?? 'Athlete export failed.')
+    } finally {
+      setExportingAthleteId(null)
     }
   }
 
@@ -408,6 +423,15 @@ export default function AthletesPage() {
                     >
                       <FileText size={13} />
                       {t.ath_caseFormulation}
+                    </button>
+                    <button
+                      onClick={e => { e.stopPropagation(); handleSingleExport(a.id) }}
+                      className="flex items-center justify-center gap-1 px-2.5 py-2 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors border border-emerald-200"
+                      title="Export Athlete CSV"
+                      disabled={exportingAthleteId === a.id}
+                    >
+                      <Download size={13} />
+                      {exportingAthleteId === a.id ? '...' : 'CSV'}
                     </button>
                     <button
                       onClick={e => { e.stopPropagation(); setDeleteTarget(a) }}

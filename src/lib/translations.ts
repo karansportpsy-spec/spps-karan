@@ -48,7 +48,11 @@ export const LANGUAGES: LangMeta[] = [
 // ── Translation keys ───────────────────────────────────────────────────────────
 // Key set: navigation, common actions, page titles, status labels
 
-export type T = typeof TRANSLATIONS['en']
+type WidenStrings<TObj> = {
+  [K in keyof TObj]: TObj[K] extends string ? string : TObj[K]
+}
+
+export type T = WidenStrings<(typeof TRANSLATIONS)['en']>
 
 const TRANSLATIONS = {
   en: {

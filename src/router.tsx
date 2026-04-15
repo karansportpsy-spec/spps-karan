@@ -25,6 +25,11 @@ import {
   SessionsPage, CheckInsPage, AssessmentsPage,
   InterventionsPage, AIAssistantPage, ReportsPage, SettingsPage,
 } from '@/pages/AppPages'
+import ChatPage from '@/pages/chat/ChatPage'
+import AthleteLoginPage from '@/pages/athlete/AthleteLoginPage'
+import AthletePortalPage from '@/pages/athlete/AthletePortalPage'
+import { getAthleteAccessToken } from '@/lib/apiClient'
+import { getStoredAthleteProfile } from '@/services/athletePortalApi'
 
 // Athlete portal pages — all inside src/pages/athletes/
 import AcceptInvitePage        from '@/pages/athletes/AcceptInvitePage'
@@ -106,11 +111,32 @@ function RequireAthlete() {
   return <Outlet />
 }
 
+function RequireAthletePortalAuth() {
+  const token = getAthleteAccessToken()
+  const profile = getStoredAthleteProfile()
+  if (!token || !profile) return <Navigate to="/athlete/login" replace />
+  return <Outlet />
+}
+
+function RedirectIfAthletePortalAuth({ children }: { children: React.ReactNode }) {
+  const token = getAthleteAccessToken()
+  const profile = getStoredAthleteProfile()
+  if (token && profile) return <Navigate to="/athlete/portal" replace />
+  return <>{children}</>
+}
 const router = createBrowserRouter([
   { path: '/', element: <LandingPage /> },
   { path: '/auth/login',  element: <RedirectIfAuth><LoginPage  /></RedirectIfAuth> },
   { path: '/auth/signup', element: <RedirectIfAuth><SignupPage /></RedirectIfAuth> },
   { path: '/athlete/accept-invite', element: <AcceptInvitePage /> },
+  { path: '/athlete/login', element: <RedirectIfAthletePortalAuth><AthleteLoginPage /></RedirectIfAthletePortalAuth> },
+  {
+    path: '/athlete',
+    element: <RequireAthletePortalAuth />,
+    children: [
+      { path: 'portal', element: <AthletePortalPage /> },
+    ],
+  },
   {
     path: '/compliance',
     element: <ComplianceGuard />,
@@ -143,6 +169,8 @@ const router = createBrowserRouter([
       { path: '/assessments/neuro',        element: <NeurocognitivePage /> },
       { path: '/assessments/custom',       element: <CustomAssessmentPage /> },
       { path: '/interventions',            element: <InterventionsPage /> },
+      { path: '/programs',                 element: <ProgramBuilderPage /> },
+      { path: '/chat',                     element: <ChatPage /> },
       { path: '/programs',                 element: <ProgramBuilderPage /> },
       { path: '/consent',                  element: <ConsentFormsPage /> },
       { path: '/injury',                   element: <InjuryPsychologyPage /> },

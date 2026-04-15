@@ -12,10 +12,10 @@ import {
 } from 'lucide-react'
 import AppShell from '@/components/layout/AppShell'
 import { PageHeader, Button, Card, Badge, Modal, Input, Select, Spinner, EmptyState, Avatar } from '@/components/ui'
-import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAthletes } from '@/hooks/useAthletes'
 import { fmtDate } from '@/lib/utils'
+import { createConsent, deleteConsent, listConsents } from '@/services/consentApi'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -158,31 +158,33 @@ function useConsentForms(athleteId?: string) {
   return useQuery<ConsentForm[]>({
     queryKey: ['consent_forms', user?.id, athleteId],
     enabled: !!user,
-    queryFn: async () => {
-      let q = supabase
-        .from('consent_forms')
-        .select('*, athlete:athletes(id,first_name,last_name,sport,date_of_birth)')
-        .eq('practitioner_id', user!.id)
-        .order('created_at', { ascending: false })
-      if (athleteId) q = q.eq('athlete_id', athleteId)
-      const { data, error } = await q
-      if (error) throw error
-      return (data ?? []) as ConsentForm[]
-    },
+    queryFn: async () => (await listConsents(athleteId)) as ConsentForm[],
   })
 }
 
 function useCreateConsentForm() {
-  const { user } = useAuth()
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (payload: Omit<ConsentForm, 'id' | 'practitioner_id' | 'created_at'>) => {
-      const { data, error } = await supabase
-        .from('consent_forms')
-        .insert({ ...payload, practitioner_id: user!.id })
-        .select().single()
-      if (error) throw error
-      return data
+    mutationFn: async (payload: any) => {
+      return createConsent({
+        athleteId: payload.athlete_id ?? payload.athleteId,
+        formType: payload.form_type ?? payload.formType,
+        status: payload.status,
+        signedBy: payload.signed_by ?? payload.signedBy,
+        signedAt: payload.signed_at ?? payload.signedAt,
+        validUntil: payload.valid_until ?? payload.validUntil,
+        notes: payload.notes,
+        digitalSignature:
+          payload.digital_signature ??
+          payload.digitalSignature ??
+          payload.signed_by ??
+          payload.signedBy,
+        guardianName: payload.guardian_name ?? payload.guardianName,
+        guardianRelationship: payload.guardian_relationship ?? payload.guardianRelationship,
+        guardianEmail: payload.guardian_email ?? payload.guardianEmail,
+        guardianPhone: payload.guardian_phone ?? payload.guardianPhone,
+        formData: payload.form_data ?? payload.formData,
+      })
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['consent_forms'] }),
   })
@@ -192,8 +194,7 @@ function useDeleteConsentForm() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('consent_forms').delete().eq('id', id)
-      if (error) throw error
+      await deleteConsent(id)
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['consent_forms'] }),
   })
@@ -229,6 +230,7 @@ function OnlineFormModal({
   const [guardianPhone, setGuardianPhone] = useState('')
   const [validMonths, setValidMonths] = useState('12')
   const [saving, setSaving] = useState(false)
+  const [submitError, setSubmitError] = useState('')
 
   function handleClose() {
     setPickedAthleteId('')
@@ -239,12 +241,14 @@ function OnlineFormModal({
     setGuardianRel('')
     setGuardianEmail('')
     setGuardianPhone('')
+    setSubmitError('')
     onClose()
   }
 
   async function handleSubmit() {
     if (!agreed || !signedBy || !pickedAthleteId) return
     setSaving(true)
+    setSubmitError('')
     try {
       const validUntil = new Date()
       validUntil.setMonth(validUntil.getMonth() + parseInt(validMonths))
@@ -261,6 +265,8 @@ function OnlineFormModal({
         form_data: { agreed: true, sections_acknowledged: template.sections.length },
       })
       handleClose()
+    } catch (err: any) {
+      setSubmitError(err?.message ?? 'Failed to save consent form.')
     } finally { setSaving(false) }
   }
 
@@ -477,8 +483,14 @@ function OnlineFormModal({
             By clicking "Submit & Sign", you confirm the above details are accurate and consent was obtained with the individual's full understanding.
           </p>
 
+          {submitError && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+              {submitError}
+            </p>
+          )}
+
           <div className="flex justify-between gap-2 pt-2 border-t border-gray-100">
-            <Button variant="secondary" onClick={() => setStep('read')}>← Back</Button>
+            <Button variant="secondary" onClick={() => setStep('read')}>Back</Button>
             <Button onClick={handleSubmit} loading={saving} disabled={!signedBy}>
               <Check size={16} /> Submit & Sign
             </Button>
@@ -505,6 +517,7 @@ function UploadFormModal({
   const [signedAt, setSignedAt] = useState(new Date().toISOString().slice(0, 10))
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   function handleClose() {
     setPickedAthleteId('')
@@ -512,12 +525,14 @@ function UploadFormModal({
     setSignedBy('')
     setSignedAt(new Date().toISOString().slice(0, 10))
     setNotes('')
+    setSaveError('')
     onClose()
   }
 
   async function handleSave() {
     if (!pickedAthleteId || !signedBy) return
     setSaving(true)
+    setSaveError('')
     try {
       await onSave({
         athlete_id: pickedAthleteId,
@@ -528,6 +543,8 @@ function UploadFormModal({
         notes: notes || 'Offline form uploaded by practitioner',
       })
       handleClose()
+    } catch (err: any) {
+      setSaveError(err?.message ?? 'Failed to save uploaded form record.')
     } finally { setSaving(false) }
   }
 
@@ -581,6 +598,12 @@ function UploadFormModal({
         <p className="text-xs text-gray-400">
           Store the original physical document securely. This record serves as a log that the form was obtained.
         </p>
+
+        {saveError && (
+          <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+            {saveError}
+          </p>
+        )}
 
         <div className="flex justify-end gap-2">
           <Button variant="secondary" onClick={handleClose}>Cancel</Button>
@@ -905,3 +928,5 @@ export default function ConsentFormsPage() {
     </AppShell>
   )
 }
+
+

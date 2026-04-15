@@ -162,7 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+      if (event === 'SIGNED_OUT') {
         setSession(null)
         setUser(null)
         setPractitioner(null)

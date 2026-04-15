@@ -21,6 +21,11 @@ import {
   PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, Legend,
 } from 'recharts'
 import { searchOSIICS, lookupOSIICS, type OSIICSCode } from '@/lib/osiics_data'
+import {
+  createInjuryPsychologyLog,
+  listInjuryPsychologyLogs,
+  type InjuryPsychologyLog,
+} from '@/services/injuryApi'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -54,17 +59,14 @@ interface PsychReadiness {
   athlete_id: string
   injury_id?: string
   assessed_at: string
-  // ACL-PSYCH adapted (13 items, 0-100 each)
-  acl_psych_scores: Record<string, number>
-  acl_psych_total: number
-  // Scale for Kinesiophobia (SFK-11)
-  sfk_scores: Record<string, number>
-  sfk_total: number
-  // TFSI_R items
-  tfsi_r_scores: Record<string, number>
-  tfsi_r_total: number
-  composite_score: number  // 0-100
-  clearance_status: 'not_ready' | 'progressing' | 'cleared' | 'review'
+  acl_rsi_scores: Record<string, number>
+  acl_rsi_total: number
+  tsk_scores: Record<string, number>
+  tsk_total: number
+  sirsi_scores: Record<string, number>
+  sirsi_total: number
+  overall_readiness: number  // 0-100
+  ready_to_return: boolean
   notes?: string
   created_at: string
 }
@@ -348,13 +350,29 @@ export default function InjuryPsychologyPage() {
     tsk: {} as Record<string, number>,
     sirsi: {} as Record<string, number>,
     notes: '',
-    // clearance_status computed on save
+    ready_to_return: false,
   })
   const [prStep, setPrStep] = useState<'acl' | 'tsk' | 'sirsi' | 'result'>('acl')
   const [savingInj, setSavingInj] = useState(false)
   const [savingPr, setSavingPr] = useState(false)
   const [injSaveError, setInjSaveError] = useState('')
   const [prSaveError, setPrSaveError] = useState('')
+  const [reflectionAthleteId, setReflectionAthleteId] = useState('')
+  const [reflectionForm, setReflectionForm] = useState({
+    moodScore: 6,
+    stressScore: 4,
+    confidenceScore: 6,
+    painAcceptanceScore: 5,
+    reflection: '',
+  })
+  const [reflectionError, setReflectionError] = useState('')
+
+  const activeReflectionAthleteId = reflectionAthleteId || filterAthleteId || athletes[0]?.id || ''
+  const { data: injuryPsychLogs = [], refetch: refetchInjuryPsychLogs, isLoading: injuryPsychLogsLoading } = useQuery<InjuryPsychologyLog[]>({
+    queryKey: ['injury_psychology_logs', activeReflectionAthleteId],
+    enabled: !!activeReflectionAthleteId,
+    queryFn: () => listInjuryPsychologyLogs(activeReflectionAthleteId),
+  })
 
   async function handleSaveInjury() {
     setSavingInj(true)
@@ -419,14 +437,14 @@ export default function InjuryPsychologyPage() {
         athlete_id: prForm.athlete_id,
         injury_id: prForm.injury_id || undefined,
         assessed_at: new Date().toISOString(),
-        acl_psych_scores: prForm.acl_rsi,
-        acl_psych_total: aclTotal,
-        sfk_scores: prForm.tsk,
-        sfk_total: tskTotal,
-        tfsi_r_scores: prForm.sirsi,
-        tfsi_r_total: sirsiTotal,
-        composite_score: overall,
-        clearance_status: overall >= 65 && tskTotal <= 28 ? 'cleared' : overall >= 40 ? 'progressing' : 'not_ready',
+        acl_rsi_scores: prForm.acl_rsi,
+        acl_rsi_total: aclTotal,
+        tsk_scores: prForm.tsk,
+        tsk_total: tskTotal,
+        sirsi_scores: prForm.sirsi,
+        sirsi_total: sirsiTotal,
+        overall_readiness: overall,
+        ready_to_return: overall >= 65 && tskTotal <= 28,
         notes: prForm.notes || undefined,
       })
       setReadinessModalOpen(false)
@@ -434,6 +452,25 @@ export default function InjuryPsychologyPage() {
     } catch (err: any) {
       setPrSaveError('Save failed: ' + (err?.message ?? 'unknown error'))
     } finally { setSavingPr(false) }
+  }
+
+  async function handleSaveReflectionLog() {
+    if (!activeReflectionAthleteId || !reflectionForm.reflection.trim()) return
+    setReflectionError('')
+    try {
+      await createInjuryPsychologyLog({
+        athleteId: activeReflectionAthleteId,
+        moodScore: reflectionForm.moodScore,
+        stressScore: reflectionForm.stressScore,
+        confidenceScore: reflectionForm.confidenceScore,
+        painAcceptanceScore: reflectionForm.painAcceptanceScore,
+        reflection: reflectionForm.reflection.trim(),
+      })
+      setReflectionForm((prev) => ({ ...prev, reflection: '' }))
+      await refetchInjuryPsychLogs()
+    } catch (err: any) {
+      setReflectionError(err?.message ?? 'Failed to save injury psychology reflection.')
+    }
   }
 
   async function generateAIAnalysis(injury: InjuryRecord) {
@@ -461,7 +498,7 @@ ${injury.notes ? `Notes: ${injury.notes}` : ''}
 Psych Referral Needed: ${injury.psych_referral_needed ? 'Yes' : 'No'}
 
 ${prRecords.length > 0 ? `PSYCHOLOGICAL READINESS ASSESSMENTS (${prRecords.length} on record):
-${prRecords.map(r => `  - ${fmtDate(r.assessed_at)}: ACL-PSYCH ${r.acl_psych_total}%, TSK ${r.sfk_total}/44, SIRSI ${r.tfsi_r_total}%, Overall Readiness ${r.composite_score}% — ${r.clearance_status === 'cleared' ? 'CLEARED' : 'NOT CLEARED'}`).join('\n')}` : 'No psychological readiness assessments recorded yet.'}
+${prRecords.map(r => `  - ${fmtDate(r.assessed_at)}: ACL-RSI ${r.acl_rsi_total}%, TSK ${r.tsk_total}/44, SIRSI ${r.sirsi_total}%, Overall Readiness ${r.overall_readiness}% — ${r.ready_to_return ? 'CLEARED' : 'NOT CLEARED'}`).join('\n')}` : 'No psychological readiness assessments recorded yet.'}
 
 Please provide a professional psychological analysis including:
 
@@ -737,21 +774,21 @@ Write in professional clinical language. Be specific to this injury type and ath
                         <p className="text-xs text-gray-400">{fmtDate(r.assessed_at)}</p>
                       </div>
                       <div className="text-center">
-                        <div className={`text-2xl font-black ${r.composite_score >= 65 ? 'text-green-600' : r.composite_score >= 40 ? 'text-amber-600' : 'text-red-600'}`}>
-                          {r.composite_score}%
+                        <div className={`text-2xl font-black ${r.overall_readiness >= 65 ? 'text-green-600' : r.overall_readiness >= 40 ? 'text-amber-600' : 'text-red-600'}`}>
+                          {r.overall_readiness}%
                         </div>
                         <p className="text-xs text-gray-400">Overall</p>
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.clearance_status === 'cleared' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'} : 'bg-red-100 text-red-700'}`}>
-                          {r.clearance_status === 'cleared' ? '✓ Cleared' : '✗ Not cleared'}
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.ready_to_return ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          {r.ready_to_return ? '✓ Cleared' : '✗ Not cleared'}
                         </span>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-3 gap-3">
                       {[
-                        { label: 'ACL-RSI', value: r.acl_psych_total, max: 100, desc: 'Psychological readiness' },
-                        { label: 'TSK-11', value: r.sfk_total, max: 44, desc: 'Kinesiophobia (lower=better)', lower_better: true },
-                        { label: 'SIRSI', value: r.tfsi_r_total, max: 100, desc: 'Sport injury readiness' },
+                        { label: 'ACL-RSI', value: r.acl_rsi_total, max: 100, desc: 'Psychological readiness' },
+                        { label: 'TSK-11', value: r.tsk_total, max: 44, desc: 'Kinesiophobia (lower=better)', lower_better: true },
+                        { label: 'SIRSI', value: r.sirsi_total, max: 100, desc: 'Sport injury readiness' },
                       ].map(m => {
                         const pct = (m.value / m.max) * 100
                         const good = m.lower_better ? pct < 65 : pct >= 65
@@ -770,6 +807,116 @@ Write in professional clinical language. Be specific to this injury type and ath
               })}
             </div>
           )}
+
+          <Card className="p-5 mt-5">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <h3 className="font-semibold text-gray-900">Injury Psychology Reflection Log</h3>
+                <p className="text-xs text-gray-500">Track emotional adaptation during rehab and return-to-play.</p>
+              </div>
+              <select
+                value={activeReflectionAthleteId}
+                onChange={(e) => setReflectionAthleteId(e.target.value)}
+                className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white"
+              >
+                <option value="">Select athlete</option>
+                {athletes.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.first_name} {a.last_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid sm:grid-cols-4 gap-3 mb-3">
+              <Input
+                label="Mood (1-10)"
+                type="number"
+                min={1}
+                max={10}
+                value={String(reflectionForm.moodScore)}
+                onChange={(e) =>
+                  setReflectionForm((prev) => ({ ...prev, moodScore: Math.max(1, Math.min(10, Number(e.target.value || 1))) }))
+                }
+              />
+              <Input
+                label="Stress (1-10)"
+                type="number"
+                min={1}
+                max={10}
+                value={String(reflectionForm.stressScore)}
+                onChange={(e) =>
+                  setReflectionForm((prev) => ({ ...prev, stressScore: Math.max(1, Math.min(10, Number(e.target.value || 1))) }))
+                }
+              />
+              <Input
+                label="Confidence (1-10)"
+                type="number"
+                min={1}
+                max={10}
+                value={String(reflectionForm.confidenceScore)}
+                onChange={(e) =>
+                  setReflectionForm((prev) => ({ ...prev, confidenceScore: Math.max(1, Math.min(10, Number(e.target.value || 1))) }))
+                }
+              />
+              <Input
+                label="Pain Acceptance (1-10)"
+                type="number"
+                min={1}
+                max={10}
+                value={String(reflectionForm.painAcceptanceScore)}
+                onChange={(e) =>
+                  setReflectionForm((prev) => ({
+                    ...prev,
+                    painAcceptanceScore: Math.max(1, Math.min(10, Number(e.target.value || 1))),
+                  }))
+                }
+              />
+            </div>
+
+            <Textarea
+              label="Reflection"
+              value={reflectionForm.reflection}
+              onChange={(e) => setReflectionForm((prev) => ({ ...prev, reflection: e.target.value }))}
+              rows={3}
+              placeholder="How is the athlete coping psychologically with the injury and rehab today?"
+            />
+
+            {reflectionError && (
+              <p className="mt-2 text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                {reflectionError}
+              </p>
+            )}
+
+            <div className="flex justify-end mt-3">
+              <Button onClick={handleSaveReflectionLog} disabled={!activeReflectionAthleteId || !reflectionForm.reflection.trim()}>
+                Save Reflection Log
+              </Button>
+            </div>
+
+            <div className="mt-4 border-t border-gray-100 pt-3">
+              <p className="text-xs font-semibold text-gray-600 mb-2 uppercase tracking-wide">Recent Reflection Entries</p>
+              {injuryPsychLogsLoading ? (
+                <div className="py-4 flex justify-center"><Spinner size="sm" /></div>
+              ) : injuryPsychLogs.length === 0 ? (
+                <p className="text-sm text-gray-500">No reflection logs yet for this athlete.</p>
+              ) : (
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  {injuryPsychLogs.slice(0, 12).map((log) => (
+                    <div key={log.id} className="border border-gray-100 rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs text-gray-400">{fmtDate(log.created_at)}</p>
+                        <span className="text-xs text-gray-500">
+                          M {log.mood_score ?? '-'} · S {log.stress_score ?? '-'} · C {log.confidence_score ?? '-'} · P {log.pain_acceptance_score ?? '-'}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-700">{log.reflection}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Card>
         </div>
       )}
 
@@ -847,8 +994,8 @@ Write in professional clinical language. Be specific to this injury type and ath
                 <ResponsiveContainer width="100%" height={160}>
                   <LineChart data={[...readiness].reverse().slice(0, 12).map(r => ({
                     date: fmtDate(r.assessed_at),
-                    'Overall %': r.composite_score,
-                    'ACL-RSI': r.acl_psych_total,
+                    'Overall %': r.overall_readiness,
+                    'ACL-RSI': r.acl_rsi_total,
                   }))} margin={{ left: -20 }}>
                     <XAxis dataKey="date" tick={{ fontSize: 9 }} />
                     <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} />

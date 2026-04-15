@@ -309,7 +309,7 @@ export default function AssessmentsPage() {
             filterAthleteId={profFilterAthlete}
             onFilterChange={setProfFilterAthlete}
             onNew={() => setProfilingOpen(true)}
-            onDomainSelect={(d) => { setProfDomain(d); setProfilingOpen(true) }}
+            onDomainSelect={(d: (typeof PROFILING_DOMAINS)[number]) => { setProfDomain(d); setProfilingOpen(true) }}
           />
         )}
 
@@ -468,9 +468,9 @@ export default function AssessmentsPage() {
             scores={profScores}
             notes={profNotes}
             saving={savingProfile}
-            onDomainChange={(d) => { setProfDomain(d); setProfScores({}) }}
+            onDomainChange={(d: (typeof PROFILING_DOMAINS)[number]) => { setProfDomain(d); setProfScores({}) }}
             onAthleteChange={setProfAthleteId}
-            onScoreChange={(key, val) => setProfScores(s => ({ ...s, [key]: val }))}
+            onScoreChange={(key: string, val: number) => setProfScores(s => ({ ...s, [key]: val }))}
             onNotesChange={setProfNotes}
             onSave={handleSaveProfile}
             onClose={() => setProfilingOpen(false)}

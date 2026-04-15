@@ -448,10 +448,10 @@ export default function PsychophysiologyPage() {
                   {r.hrv && Object.values(r.hrv).some(Boolean) && (
                     <div className="grid grid-cols-4 gap-3 mb-3">
                       {[
-                        { label: 'RMSSD', val: r.hrv.rmssd, unit: 'ms', good: v => v > 50 },
-                        { label: 'SDNN', val: r.hrv.sdnn, unit: 'ms', good: v => v > 50 },
-                        { label: 'LF/HF', val: r.hrv.lf_hf_ratio, unit: '', good: v => v < 2 },
-                        { label: 'pNN50', val: r.hrv.pnn50, unit: '%', good: v => v > 20 },
+                        { label: 'RMSSD', val: r.hrv.rmssd, unit: 'ms', good: (v: number) => v > 50 },
+                        { label: 'SDNN', val: r.hrv.sdnn, unit: 'ms', good: (v: number) => v > 50 },
+                        { label: 'LF/HF', val: r.hrv.lf_hf_ratio, unit: '', good: (v: number) => v < 2 },
+                        { label: 'pNN50', val: r.hrv.pnn50, unit: '%', good: (v: number) => v > 20 },
                       ].map(({ label, val, unit, good }) => val != null && (
                         <div key={label} className={`rounded-lg p-2 text-center ${good(val) ? 'bg-green-50' : 'bg-amber-50'}`}>
                           <p className="text-xs text-gray-500">{label}</p>

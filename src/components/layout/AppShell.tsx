@@ -39,6 +39,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     { label: t.nav_interventions,     href: '/interventions',       Icon: Lightbulb },
     { label: 'Athlete Programs',       href: '/programs',           Icon: Layers },
     { label: 'Athlete Messages',       href: '/conversations',      Icon: MessageCircle },
+    { label: 'Athlete Chat',          href: '/chat',                Icon: MessageCircle },
     { label: 'Consent Forms',          href: '/consent',             Icon: Shield },
     { label: 'Injury Psychology',      href: '/injury',              Icon: Activity },
     { label: 'Mental Performance Lab', href: '/lab',                Icon: FlaskConical },

@@ -143,7 +143,7 @@ export default function DashboardPage() {
   const avgSleep    = avg(recent7.map(c => c.sleep_score))
 
   // Flagged check-ins
-  const flaggedCheckins = checkins.filter(c => c.flags?.length > 0).slice(0, 3)
+  const flaggedCheckins = checkins.filter(c => (c.flags?.length ?? 0) > 0).slice(0, 3)
 
   // Trend chart data
   const trendData = buildCheckinTrend(checkins)
@@ -391,9 +391,9 @@ export default function DashboardPage() {
                       <p className="text-xs text-gray-400">ready</p>
                     </div>
                   </div>
-                  {c.flags?.length > 0 && (
+                  {(c.flags?.length ?? 0) > 0 && (
                     <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full shrink-0">
-                      {c.flags.length} flag{c.flags.length > 1 ? 's' : ''}
+                      {c.flags?.length ?? 0} flag{(c.flags?.length ?? 0) > 1 ? 's' : ''}
                     </span>
                   )}
                 </div>

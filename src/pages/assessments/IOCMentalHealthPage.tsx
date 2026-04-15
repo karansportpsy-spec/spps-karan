@@ -3,8 +3,8 @@ import { ChevronLeft, ChevronRight, CheckCircle, AlertTriangle, Heart, Brain, Mo
 import AppShell from '@/components/layout/AppShell'
 import { Button, Card, Select, Avatar } from '@/components/ui'
 import { useAthletes } from '@/hooks/useAthletes'
-import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { saveAssessmentBundle } from '@/services/assessmentApi'
 
 // ── Question Data ─────────────────────────────────────────────
 
@@ -193,14 +193,16 @@ export default function IOCMentalHealthPage() {
         AMHS: sum(mhs), DEPSCR: sum(depscr), ANXSCR: sum(anxscr),
         SQI: sum(sqi), AUSC: sum(ausc),
       }
-      await supabase.from('assessments').insert({
-        practitioner_id: user.id,
-        athlete_id: athleteId,
-        tool: 'Custom',
-        administered_at: new Date().toISOString(),
-        scores,
-        total_score: Object.values(scores).reduce((a, b) => a + b, 0),
-        notes: `Athlete Mental Health Screening completed. AMHS: ${scores.AMHS}/40, DEPSCR: ${scores.DEPSCR}/27, ANXSCR: ${scores.ANXSCR}/21, SQI: ${scores.SQI}/21, AUSC: ${scores.AUSC}/12`,
+      const totalScore = Object.values(scores).reduce((a, b) => a + b, 0)
+      await saveAssessmentBundle({
+        athleteId,
+        mentalHealth: {
+          tool: 'MentalHealthScreening',
+          scores,
+          totalScore,
+          interpretation: `AMHS ${scores.AMHS}/40 · DEPSCR ${scores.DEPSCR}/27 · ANXSCR ${scores.ANXSCR}/21 · SQI ${scores.SQI}/21 · AUSC ${scores.AUSC}/12`,
+          notes: 'Mental health bundle saved from IOC screening flow.',
+        },
       })
       setSaved(true)
     } finally {

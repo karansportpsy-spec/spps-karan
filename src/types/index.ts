@@ -74,6 +74,9 @@ export interface Athlete {
   notes?: string
   emergency_contact_name?: string
   emergency_contact_phone?: string
+  is_portal_activated?: boolean
+  portal_activated_at?: string
+  portal_user_id?: string
   uid_code?: string          // FIX: added — WMP-YYYY-XXXXXX anonymisation UID
   age_group?: string         // FIX: added — e.g. 'U18', 'Senior', 'Masters'
   created_at: string
