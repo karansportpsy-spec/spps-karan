@@ -1,8 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 
-import { apiJson, getAuthToken } from '@/lib/apiClient';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+import { API_BASE_URL, apiJson, getAuthToken } from '@/lib/apiClient';
 
 export type ChatMessage = {
   id: string;

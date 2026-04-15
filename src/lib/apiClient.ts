@@ -1,6 +1,22 @@
 import { supabase } from '@/lib/supabase';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+function resolveApiBaseUrl() {
+  const configured = import.meta.env.VITE_API_BASE_URL?.trim();
+  if (configured) {
+    return configured.replace(/\/+$/, '');
+  }
+
+  if (typeof window === 'undefined') {
+    return 'http://localhost:4000';
+  }
+
+  const { hostname, origin } = window.location;
+  const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+
+  return isLocalhost ? 'http://localhost:4000' : origin;
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 const ATHLETE_TOKEN_KEY = 'spps-athlete-access-token';
 
 export function setAthleteAccessToken(token: string) {
