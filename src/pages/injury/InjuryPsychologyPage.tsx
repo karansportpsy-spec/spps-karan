@@ -63,8 +63,8 @@ interface PsychReadiness {
   // TFSI_R items
   tfsi_r_scores: Record<string, number>
   tfsi_r_total: number
-  overall_readiness: number  // 0-100
-  ready_to_return: boolean
+  composite_score: number  // 0-100
+  clearance_status: 'not_ready' | 'progressing' | 'cleared' | 'review'
   notes?: string
   created_at: string
 }
@@ -348,7 +348,7 @@ export default function InjuryPsychologyPage() {
     tsk: {} as Record<string, number>,
     sirsi: {} as Record<string, number>,
     notes: '',
-    ready_to_return: false,
+    // clearance_status computed on save
   })
   const [prStep, setPrStep] = useState<'acl' | 'tsk' | 'sirsi' | 'result'>('acl')
   const [savingInj, setSavingInj] = useState(false)
@@ -419,14 +419,14 @@ export default function InjuryPsychologyPage() {
         athlete_id: prForm.athlete_id,
         injury_id: prForm.injury_id || undefined,
         assessed_at: new Date().toISOString(),
-        acl_rsi_scores: prForm.acl_rsi,
-        acl_rsi_total: aclTotal,
-        tsk_scores: prForm.tsk,
-        tsk_total: tskTotal,
-        sirsi_scores: prForm.sirsi,
-        sirsi_total: sirsiTotal,
-        overall_readiness: overall,
-        ready_to_return: overall >= 65 && tskTotal <= 28,
+        acl_psych_scores: prForm.acl_rsi,
+        acl_psych_total: aclTotal,
+        sfk_scores: prForm.tsk,
+        sfk_total: tskTotal,
+        tfsi_r_scores: prForm.sirsi,
+        tfsi_r_total: sirsiTotal,
+        composite_score: overall,
+        clearance_status: overall >= 65 && tskTotal <= 28 ? 'cleared' : overall >= 40 ? 'progressing' : 'not_ready',
         notes: prForm.notes || undefined,
       })
       setReadinessModalOpen(false)
@@ -461,7 +461,7 @@ ${injury.notes ? `Notes: ${injury.notes}` : ''}
 Psych Referral Needed: ${injury.psych_referral_needed ? 'Yes' : 'No'}
 
 ${prRecords.length > 0 ? `PSYCHOLOGICAL READINESS ASSESSMENTS (${prRecords.length} on record):
-${prRecords.map(r => `  - ${fmtDate(r.assessed_at)}: ACL-RSI ${r.acl_rsi_total}%, TSK ${r.tsk_total}/44, SIRSI ${r.sirsi_total}%, Overall Readiness ${r.overall_readiness}% — ${r.ready_to_return ? 'CLEARED' : 'NOT CLEARED'}`).join('\n')}` : 'No psychological readiness assessments recorded yet.'}
+${prRecords.map(r => `  - ${fmtDate(r.assessed_at)}: ACL-PSYCH ${r.acl_psych_total}%, TSK ${r.sfk_total}/44, SIRSI ${r.tfsi_r_total}%, Overall Readiness ${r.composite_score}% — ${r.clearance_status === 'cleared' ? 'CLEARED' : 'NOT CLEARED'}`).join('\n')}` : 'No psychological readiness assessments recorded yet.'}
 
 Please provide a professional psychological analysis including:
 
@@ -737,21 +737,21 @@ Write in professional clinical language. Be specific to this injury type and ath
                         <p className="text-xs text-gray-400">{fmtDate(r.assessed_at)}</p>
                       </div>
                       <div className="text-center">
-                        <div className={`text-2xl font-black ${r.overall_readiness >= 65 ? 'text-green-600' : r.overall_readiness >= 40 ? 'text-amber-600' : 'text-red-600'}`}>
-                          {r.overall_readiness}%
+                        <div className={`text-2xl font-black ${r.composite_score >= 65 ? 'text-green-600' : r.composite_score >= 40 ? 'text-amber-600' : 'text-red-600'}`}>
+                          {r.composite_score}%
                         </div>
                         <p className="text-xs text-gray-400">Overall</p>
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.ready_to_return ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                          {r.ready_to_return ? '✓ Cleared' : '✗ Not cleared'}
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.clearance_status === 'cleared' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'} : 'bg-red-100 text-red-700'}`}>
+                          {r.clearance_status === 'cleared' ? '✓ Cleared' : '✗ Not cleared'}
                         </span>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-3 gap-3">
                       {[
-                        { label: 'ACL-RSI', value: r.acl_rsi_total, max: 100, desc: 'Psychological readiness' },
-                        { label: 'TSK-11', value: r.tsk_total, max: 44, desc: 'Kinesiophobia (lower=better)', lower_better: true },
-                        { label: 'SIRSI', value: r.sirsi_total, max: 100, desc: 'Sport injury readiness' },
+                        { label: 'ACL-RSI', value: r.acl_psych_total, max: 100, desc: 'Psychological readiness' },
+                        { label: 'TSK-11', value: r.sfk_total, max: 44, desc: 'Kinesiophobia (lower=better)', lower_better: true },
+                        { label: 'SIRSI', value: r.tfsi_r_total, max: 100, desc: 'Sport injury readiness' },
                       ].map(m => {
                         const pct = (m.value / m.max) * 100
                         const good = m.lower_better ? pct < 65 : pct >= 65
@@ -847,8 +847,8 @@ Write in professional clinical language. Be specific to this injury type and ath
                 <ResponsiveContainer width="100%" height={160}>
                   <LineChart data={[...readiness].reverse().slice(0, 12).map(r => ({
                     date: fmtDate(r.assessed_at),
-                    'Overall %': r.overall_readiness,
-                    'ACL-RSI': r.acl_rsi_total,
+                    'Overall %': r.composite_score,
+                    'ACL-RSI': r.acl_psych_total,
                   }))} margin={{ left: -20 }}>
                     <XAxis dataKey="date" tick={{ fontSize: 9 }} />
                     <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} />
