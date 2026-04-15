@@ -48,7 +48,11 @@ npm run dev:api
 npm install
 ```
 2. Ensure:
-- `VITE_API_BASE_URL=http://localhost:4000`
+- Local dev (Vite + API on different ports): `VITE_API_BASE_URL=http://localhost:4000`
+- Deployed environments: set `VITE_API_BASE_URL` to your API origin when backend is hosted separately.
+  - If `VITE_API_BASE_URL` is not set, frontend now auto-resolves to:
+    - `http://localhost:4000` on `localhost`
+    - current site origin in production/previews
 3. Start frontend:
 ```bash
 npm run dev
