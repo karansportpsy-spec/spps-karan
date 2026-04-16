@@ -5,6 +5,48 @@ begin;
 
 create extension if not exists pgcrypto;
 
+-- ---------- Align existing legacy tables to current app schema ----------
+-- These ALTERs are safe on both fresh and pre-existing databases.
+
+-- psychophysiology (legacy instances may miss newer JSON columns + device_used)
+alter table if exists psychophysiology
+  add column if not exists session_context text,
+  add column if not exists hrv jsonb not null default '{}'::jsonb,
+  add column if not exists vitals jsonb not null default '{}'::jsonb,
+  add column if not exists emg jsonb not null default '[]'::jsonb,
+  add column if not exists eeg jsonb not null default '{}'::jsonb,
+  add column if not exists gsr jsonb not null default '{}'::jsonb,
+  add column if not exists wearable_data jsonb not null default '{}'::jsonb,
+  add column if not exists device_used text,
+  add column if not exists notes text;
+
+-- neurocognitive (legacy instances may miss comparison_group / custom fields)
+alter table if exists neurocognitive
+  add column if not exists platform text,
+  add column if not exists test_date date,
+  add column if not exists comparison_group text,
+  add column if not exists context text,
+  add column if not exists senaptec_scores jsonb not null default '{}'::jsonb,
+  add column if not exists custom_metrics jsonb not null default '[]'::jsonb,
+  add column if not exists notes text,
+  add column if not exists raw_report_notes text;
+
+-- intervention programs (older DBs may not have milestones)
+alter table if exists intervention_programs
+  add column if not exists milestones jsonb not null default '[]'::jsonb;
+
+-- consent forms (older DBs may miss guardian/contact and signature fields)
+alter table if exists consent_forms
+  add column if not exists guardian_name text,
+  add column if not exists guardian_relationship text,
+  add column if not exists guardian_email text,
+  add column if not exists guardian_phone text,
+  add column if not exists form_data jsonb not null default '{}'::jsonb,
+  add column if not exists digital_signature text,
+  add column if not exists signed_timestamp timestamptz,
+  add column if not exists signature_ip inet,
+  add column if not exists updated_at timestamptz not null default now();
+
 -- ---------- Athletes portal activation ----------
 alter table if exists athletes
   add column if not exists is_portal_activated boolean not null default false,
@@ -490,5 +532,11 @@ on assessment_bundles
 for all
 using (auth.uid() = practitioner_id)
 with check (auth.uid() = practitioner_id);
+
+-- Ask PostgREST to refresh its schema cache so new columns are visible immediately.
+do $$
+begin
+  perform pg_notify('pgrst', 'reload schema');
+end $$;
 
 commit;
