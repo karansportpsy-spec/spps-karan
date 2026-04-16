@@ -43,6 +43,7 @@ interface InjuryRecord {
   mechanism: string
   context: 'training' | 'match' | 'gym' | 'rehab' | 'unknown'
   date_of_injury: string
+  injury_date?: string
   date_of_return?: string
   missed_days?: number
   missed_matches?: number
@@ -390,6 +391,7 @@ export default function InjuryPsychologyPage() {
         mechanism: injForm.mechanism,
         context: injForm.context,
         date_of_injury: new Date(injForm.date_of_injury).toISOString(),
+        injury_date: injForm.date_of_injury,
         date_of_return: injForm.date_of_return ? new Date(injForm.date_of_return).toISOString() : undefined,
         missed_days: injForm.missed_days ? parseInt(injForm.missed_days) : undefined,
         missed_matches: injForm.missed_matches ? parseInt(injForm.missed_matches) : undefined,

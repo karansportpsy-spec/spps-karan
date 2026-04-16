@@ -256,6 +256,7 @@ export default function PsychophysiologyPage() {
         const m = s.metrics
         return {
           athlete_id: wearableAthlete,
+          record_type: 'wearable',
           session_context: 'wearable_import',
           hrv: {
             rmssd: typeof m.hrv_rmssd === 'number' ? m.hrv_rmssd : null,
@@ -316,6 +317,7 @@ export default function PsychophysiologyPage() {
     try {
       const payload = {
         athlete_id: form.athlete_id,
+        record_type: 'manual',
         session_context: form.session_context,
         hrv: {
           rmssd: parseFloat(form.hrv_rmssd) || null,

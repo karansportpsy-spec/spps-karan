@@ -65,6 +65,7 @@ export async function saveAssessmentBundle(payload: AssessmentBundlePayload) {
         .insert({
           practitioner_id: practitionerId,
           athlete_id: payload.athleteId,
+          record_type: (physio as any).record_type || 'manual',
           session_context: (physio as any).session_context || 'assessment_bundle',
           hrv: (physio as any).hrv || {},
           vitals: (physio as any).vitals || {},

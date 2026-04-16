@@ -10,6 +10,7 @@ create extension if not exists pgcrypto;
 
 -- psychophysiology (legacy instances may miss newer JSON columns + device_used)
 alter table if exists psychophysiology
+  add column if not exists record_type text,
   add column if not exists session_context text,
   add column if not exists hrv jsonb not null default '{}'::jsonb,
   add column if not exists vitals jsonb not null default '{}'::jsonb,
@@ -19,6 +20,26 @@ alter table if exists psychophysiology
   add column if not exists wearable_data jsonb not null default '{}'::jsonb,
   add column if not exists device_used text,
   add column if not exists notes text;
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'psychophysiology'
+      and column_name = 'record_type'
+  ) then
+    execute $sql$
+      update psychophysiology
+         set record_type = coalesce(nullif(trim(record_type), ''), 'manual')
+       where record_type is null
+          or trim(record_type) = ''
+    $sql$;
+    execute 'alter table psychophysiology alter column record_type set default ''manual''';
+    execute 'alter table psychophysiology alter column record_type set not null';
+  end if;
+end $$;
 
 -- neurocognitive (legacy instances may miss comparison_group / custom fields)
 alter table if exists neurocognitive
@@ -31,12 +52,32 @@ alter table if exists neurocognitive
   add column if not exists notes text,
   add column if not exists raw_report_notes text;
 
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'neurocognitive'
+      and column_name = 'custom_metrics'
+  ) then
+    execute $sql$
+      update neurocognitive
+         set custom_metrics = coalesce(custom_metrics, '[]'::jsonb)
+       where custom_metrics is null
+    $sql$;
+    execute 'alter table neurocognitive alter column custom_metrics set default ''[]''::jsonb';
+    execute 'alter table neurocognitive alter column custom_metrics set not null';
+  end if;
+end $$;
+
 -- intervention programs (older DBs may not have milestones)
 alter table if exists intervention_programs
   add column if not exists milestones jsonb not null default '[]'::jsonb;
 
 -- consent forms (older DBs may miss guardian/contact and signature fields)
 alter table if exists consent_forms
+  add column if not exists valid_until timestamptz,
   add column if not exists guardian_name text,
   add column if not exists guardian_relationship text,
   add column if not exists guardian_email text,
@@ -46,6 +87,125 @@ alter table if exists consent_forms
   add column if not exists signed_timestamp timestamptz,
   add column if not exists signature_ip inet,
   add column if not exists updated_at timestamptz not null default now();
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'consent_forms'
+      and column_name = 'expires_at'
+  ) and exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'consent_forms'
+      and column_name = 'valid_until'
+  ) then
+    execute $sql$
+      update consent_forms
+         set valid_until = coalesce(valid_until, expires_at::timestamptz)
+       where valid_until is null
+         and expires_at is not null
+    $sql$;
+  end if;
+end $$;
+
+-- injury records + psych readiness compatibility (legacy DBs may have older column names)
+alter table if exists injury_records
+  add column if not exists date_of_injury timestamptz,
+  add column if not exists injury_date date;
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'injury_records' and column_name = 'injury_date'
+  ) then
+    execute 'alter table injury_records alter column injury_date set default current_date';
+  end if;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'injury_records' and column_name = 'date_of_injury'
+  ) then
+    execute 'alter table injury_records alter column date_of_injury set default now()';
+  end if;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'injury_records' and column_name = 'injury_date'
+  ) and exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'injury_records' and column_name = 'date_of_injury'
+  ) then
+    execute $sql$
+      update injury_records
+         set date_of_injury = coalesce(date_of_injury, injury_date::timestamptz),
+             injury_date = coalesce(injury_date, date_of_injury::date)
+       where date_of_injury is null
+          or injury_date is null
+    $sql$;
+  end if;
+end $$;
+
+create or replace function sync_injury_record_dates()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.date_of_injury is null and new.injury_date is not null then
+    new.date_of_injury = new.injury_date::timestamptz;
+  end if;
+  if new.injury_date is null and new.date_of_injury is not null then
+    new.injury_date = new.date_of_injury::date;
+  end if;
+  if new.date_of_injury is null and new.injury_date is null then
+    new.date_of_injury = now();
+    new.injury_date = current_date;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_injury_records_sync_dates on injury_records;
+create trigger trg_injury_records_sync_dates
+before insert or update on injury_records
+for each row execute function sync_injury_record_dates();
+
+alter table if exists psych_readiness
+  add column if not exists acl_rsi_scores jsonb not null default '{}'::jsonb,
+  add column if not exists acl_rsi_total numeric not null default 0,
+  add column if not exists tsk_scores jsonb not null default '{}'::jsonb,
+  add column if not exists tsk_total numeric not null default 0,
+  add column if not exists sirsi_scores jsonb not null default '{}'::jsonb,
+  add column if not exists sirsi_total numeric not null default 0,
+  add column if not exists overall_readiness numeric not null default 0,
+  add column if not exists ready_to_return boolean not null default false,
+  add column if not exists notes text;
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'psych_readiness' and column_name = 'acl_rsi_scores'
+  ) then
+    execute 'update psych_readiness set acl_rsi_scores = coalesce(acl_rsi_scores, ''{}''::jsonb) where acl_rsi_scores is null';
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'psych_readiness' and column_name = 'tsk_scores'
+  ) then
+    execute 'update psych_readiness set tsk_scores = coalesce(tsk_scores, ''{}''::jsonb) where tsk_scores is null';
+  end if;
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'psych_readiness' and column_name = 'sirsi_scores'
+  ) then
+    execute 'update psych_readiness set sirsi_scores = coalesce(sirsi_scores, ''{}''::jsonb) where sirsi_scores is null';
+  end if;
+end $$;
 
 -- ---------- Athletes portal activation ----------
 alter table if exists athletes

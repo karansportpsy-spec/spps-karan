@@ -40,30 +40,52 @@ export async function createConsent(payload: ConsentPayload) {
       : new Date().toISOString();
     const validUntilIso = payload.validUntil ? new Date(payload.validUntil).toISOString() : null;
 
-    const { data, error: insertError } = await supabase
-      .from('consent_forms')
-      .insert({
-        practitioner_id: practitionerId,
-        athlete_id: payload.athleteId,
-        form_type: payload.formType,
-        status: payload.status ?? 'signed',
-        signed_by: payload.signedBy,
-        signed_at: signedAtIso,
-        signed_timestamp: signedAtIso,
-        valid_until: validUntilIso,
-        notes: payload.notes ?? null,
-        digital_signature: payload.digitalSignature ?? payload.signedBy,
-        guardian_name: payload.guardianName ?? null,
-        guardian_relationship: payload.guardianRelationship ?? null,
-        guardian_email: payload.guardianEmail ?? null,
-        guardian_phone: payload.guardianPhone ?? null,
-        form_data: payload.formData ?? {},
-      })
-      .select()
-      .single();
+    const row: Record<string, unknown> = {
+      practitioner_id: practitionerId,
+      athlete_id: payload.athleteId,
+      form_type: payload.formType,
+      status: payload.status ?? 'signed',
+      signed_by: payload.signedBy,
+      signed_at: signedAtIso,
+      signed_timestamp: signedAtIso,
+      valid_until: validUntilIso,
+      notes: payload.notes ?? null,
+      digital_signature: payload.digitalSignature ?? payload.signedBy,
+      guardian_name: payload.guardianName ?? null,
+      guardian_relationship: payload.guardianRelationship ?? null,
+      guardian_email: payload.guardianEmail ?? null,
+      guardian_phone: payload.guardianPhone ?? null,
+      form_data: payload.formData ?? {},
+    };
 
-    if (insertError) throw insertError;
-    return data;
+    const missingColumnRegex =
+      /Could not find the ['"]([^'"]+)['"] column|column ["']([^"']+)["'] of relation ["']consent_forms["'] does not exist/i;
+    const removedColumns = new Set<string>();
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const { data, error: insertError } = await supabase
+        .from('consent_forms')
+        .insert(row)
+        .select()
+        .single();
+
+      if (!insertError) {
+        return data;
+      }
+
+      const message = insertError.message ?? '';
+      const match = message.match(missingColumnRegex);
+      const missingColumn = match?.[1] ?? match?.[2];
+
+      if (!missingColumn || !(missingColumn in row) || removedColumns.has(missingColumn)) {
+        throw insertError;
+      }
+
+      delete row[missingColumn];
+      removedColumns.add(missingColumn);
+    }
+
+    throw new Error('Failed to save consent form after compatibility retries.');
   }
 }
 

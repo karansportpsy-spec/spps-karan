@@ -166,8 +166,8 @@ export default function NeurocognitivePage() {
         test_date: form.test_date,
         comparison_group: form.comparison_group,
         context: form.context,
-        senaptec_scores: isSenaptec ? senaptecScores : null,
-        custom_metrics: !isSenaptec ? form.custom_metrics.filter((m: any) => m.name && m.value) : null,
+        senaptec_scores: isSenaptec ? senaptecScores : {},
+        custom_metrics: !isSenaptec ? form.custom_metrics.filter((m: any) => m.name && m.value) : [],
         notes: form.notes,
         raw_report_notes: form.raw_report_notes,
       })

@@ -18,6 +18,7 @@ const assessmentBundleSchema = z
       .optional(),
     psychophysiology: z
       .object({
+        record_type: z.string().optional(),
         session_context: z.string().optional(),
         hrv: z.record(z.any()).optional(),
         vitals: z.record(z.any()).optional(),
@@ -100,13 +101,14 @@ export function registerAssessmentRoutes(app) {
           const p = payload.psychophysiology;
           const physioRes = await client.query(
             `insert into psychophysiology(
-               practitioner_id, athlete_id, session_context, hrv, vitals, emg, eeg, gsr, wearable_data, device_used, notes, created_at
+               practitioner_id, athlete_id, record_type, session_context, hrv, vitals, emg, eeg, gsr, wearable_data, device_used, notes, created_at
              )
-             values ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10, $11, now())
+             values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb, $11, $12, now())
              returning id`,
             [
               req.user.id,
               payload.athleteId,
+              p.record_type || 'manual',
               p.session_context || 'assessment_bundle',
               JSON.stringify(p.hrv || {}),
               JSON.stringify(p.vitals || {}),
