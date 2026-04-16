@@ -42,6 +42,7 @@ interface InjuryRecord {
   osiics_diagnosis_2?: string
   mechanism: string
   context: 'training' | 'match' | 'gym' | 'rehab' | 'unknown'
+  body_part?: string
   date_of_injury: string
   injury_date?: string
   date_of_return?: string
@@ -140,12 +141,42 @@ function useCreateInjury() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (payload: Omit<InjuryRecord, 'id' | 'practitioner_id' | 'created_at'>) => {
-      const { data, error } = await supabase
-        .from('injury_records')
-        .insert({ ...payload, practitioner_id: user!.id })
-        .select().single()
-      if (error) throw error
-      return data
+      const row: Record<string, any> = { ...payload, practitioner_id: user!.id }
+      const removedColumns = new Set<string>()
+      const missingColumnRegex =
+        /Could not find the ['"]([^'"]+)['"] column|column ["']([^"']+)["'] of relation ["']injury_records["'] does not exist/i
+
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const { data, error } = await supabase
+          .from('injury_records')
+          .insert(row)
+          .select()
+          .single()
+
+        if (!error) return data
+
+        const msg = error.message ?? ''
+        const match = msg.match(missingColumnRegex)
+        const missingColumn = match?.[1] ?? match?.[2]
+        if (missingColumn && missingColumn in row && !removedColumns.has(missingColumn)) {
+          delete row[missingColumn]
+          removedColumns.add(missingColumn)
+          continue
+        }
+
+        if (error.code === '23502' && msg.includes('body_part')) {
+          row.body_part = row.body_part || row.osiics_body_part_1 || 'Unspecified'
+          continue
+        }
+        if (error.code === '23502' && msg.includes('injury_date') && row.date_of_injury) {
+          row.injury_date = row.injury_date || String(row.date_of_injury).slice(0, 10)
+          continue
+        }
+
+        throw error
+      }
+
+      throw new Error('Failed to save injury record after compatibility retries.')
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['injuries'] }),
   })
@@ -379,6 +410,8 @@ export default function InjuryPsychologyPage() {
     setSavingInj(true)
     setInjSaveError('')
     try {
+      const missedDays = injForm.missed_days ? Math.max(0, parseInt(injForm.missed_days, 10) || 0) : undefined
+      const missedMatches = injForm.missed_matches ? Math.max(0, parseInt(injForm.missed_matches, 10) || 0) : undefined
       await createInjury.mutateAsync({
         athlete_id: injForm.athlete_id,
         diagnosis_text: injForm.diagnosis_text,
@@ -390,11 +423,12 @@ export default function InjuryPsychologyPage() {
         osiics_diagnosis_2: injForm.osiics_diagnosis_2 || undefined,
         mechanism: injForm.mechanism,
         context: injForm.context,
+        body_part: injForm.osiics_body_part_1 || 'Unspecified',
         date_of_injury: new Date(injForm.date_of_injury).toISOString(),
         injury_date: injForm.date_of_injury,
         date_of_return: injForm.date_of_return ? new Date(injForm.date_of_return).toISOString() : undefined,
-        missed_days: injForm.missed_days ? parseInt(injForm.missed_days) : undefined,
-        missed_matches: injForm.missed_matches ? parseInt(injForm.missed_matches) : undefined,
+        missed_days: missedDays,
+        missed_matches: missedMatches,
         severity: injForm.severity,
         status: injForm.status,
         psych_referral_needed: injForm.psych_referral_needed,

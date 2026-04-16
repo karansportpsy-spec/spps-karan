@@ -20,6 +20,20 @@ const consentSchema = z.object({
   formData: z.record(z.any()).optional(),
 });
 
+function getFormTypeCandidates(rawFormType) {
+  const normalized = String(rawFormType || '').trim().toLowerCase();
+  if (!normalized) return [];
+
+  const map = {
+    consent_confidentiality: ['consent', 'informed_consent', 'confidentiality'],
+    parental_release: ['parental_consent', 'guardian_consent', 'guardian_release'],
+    photo_media: ['media_release', 'photo_release', 'image_release'],
+    emergency_medical: ['medical_authority', 'emergency_consent', 'emergency_medical_authority'],
+  };
+
+  return [...new Set([normalized, ...(map[normalized] || [])])];
+}
+
 export function registerConsentRoutes(app) {
   app.get(`${env.apiBasePath}/consents`, requireRoles('practitioner', 'athlete'), async (req, res) => {
     try {
@@ -65,42 +79,73 @@ export function registerConsentRoutes(app) {
         return res.status(404).json({ message: 'Athlete not found for this practitioner.' });
       }
 
-      const insertRes = await pool.query(
-        `insert into consent_forms(
-          practitioner_id, athlete_id, form_type, status,
-          signed_by, signed_at, signed_timestamp,
-          valid_until, notes, digital_signature,
-          guardian_name, guardian_relationship, guardian_email, guardian_phone,
-          form_data, signature_ip
-        )
-        values (
-          $1, $2, $3, $4,
-          $5, $6, $6,
-          $7, $8, $9,
-          $10, $11, $12, $13,
-          $14::jsonb, $15::inet
-        )
-        returning *`,
-        [
-          req.user.id,
-          payload.athleteId,
-          payload.formType,
-          payload.status,
-          payload.signedBy,
-          payload.signedAt ? new Date(payload.signedAt).toISOString() : new Date().toISOString(),
-          payload.validUntil ? new Date(payload.validUntil).toISOString() : null,
-          payload.notes || null,
-          payload.digitalSignature || payload.signedBy,
-          payload.guardianName || null,
-          payload.guardianRelationship || null,
-          payload.guardianEmail || null,
-          payload.guardianPhone || null,
-          JSON.stringify(payload.formData || {}),
-          (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim() || null,
-        ]
-      );
+      const insertSql = `insert into consent_forms(
+        practitioner_id, athlete_id, form_type, status,
+        signed_by, signed_at, signed_timestamp,
+        valid_until, notes, digital_signature,
+        guardian_name, guardian_relationship, guardian_email, guardian_phone,
+        form_data, signature_ip
+      )
+      values (
+        $1, $2, $3, $4,
+        $5, $6, $6,
+        $7, $8, $9,
+        $10, $11, $12, $13,
+        $14::jsonb, $15::inet
+      )
+      returning *`;
 
-      res.status(201).json(insertRes.rows[0]);
+      const formTypeCandidates = getFormTypeCandidates(payload.formType);
+      const signedAtIso = payload.signedAt ? new Date(payload.signedAt).toISOString() : new Date().toISOString();
+      const validUntilIso = payload.validUntil ? new Date(payload.validUntil).toISOString() : null;
+      const signatureIp = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString().split(',')[0].trim() || null;
+
+      let createdRow = null;
+      let lastError = null;
+
+      for (let i = 0; i < formTypeCandidates.length; i += 1) {
+        const candidate = formTypeCandidates[i];
+        try {
+          const result = await pool.query(
+            insertSql,
+            [
+              req.user.id,
+              payload.athleteId,
+              candidate,
+              payload.status,
+              payload.signedBy,
+              signedAtIso,
+              validUntilIso,
+              payload.notes || null,
+              payload.digitalSignature || payload.signedBy,
+              payload.guardianName || null,
+              payload.guardianRelationship || null,
+              payload.guardianEmail || null,
+              payload.guardianPhone || null,
+              JSON.stringify(payload.formData || {}),
+              signatureIp,
+            ]
+          );
+          createdRow = result.rows[0];
+          break;
+        } catch (dbErr) {
+          lastError = dbErr;
+          const isFormTypeCheck =
+            dbErr &&
+            typeof dbErr === 'object' &&
+            dbErr.code === '23514' &&
+            String(dbErr.constraint || '').includes('consent_forms_form_type_check');
+          if (!isFormTypeCheck || i === formTypeCandidates.length - 1) {
+            throw dbErr;
+          }
+        }
+      }
+
+      if (!createdRow) {
+        throw lastError || new Error('Failed to create consent form.');
+      }
+
+      res.status(201).json(createdRow);
     } catch (err) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: 'Invalid consent payload.', issues: err.issues });

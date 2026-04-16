@@ -88,6 +88,33 @@ alter table if exists consent_forms
   add column if not exists signature_ip inet,
   add column if not exists updated_at timestamptz not null default now();
 
+-- Relax/normalize legacy form_type checks so current app form slugs are accepted.
+do $$
+declare
+  c record;
+begin
+  if to_regclass('public.consent_forms') is not null then
+    for c in
+      select conname
+      from pg_constraint pc
+      join pg_class t on t.oid = pc.conrelid
+      join pg_namespace n on n.oid = t.relnamespace
+      where n.nspname = 'public'
+        and t.relname = 'consent_forms'
+        and pc.contype = 'c'
+        and pg_get_constraintdef(pc.oid) ilike '%form_type%'
+    loop
+      execute format('alter table consent_forms drop constraint if exists %I', c.conname);
+    end loop;
+
+    execute $sql$
+      alter table consent_forms
+      add constraint consent_forms_form_type_check
+      check (char_length(trim(form_type)) >= 2)
+    $sql$;
+  end if;
+end $$;
+
 do $$
 begin
   if exists (
@@ -115,7 +142,8 @@ end $$;
 -- injury records + psych readiness compatibility (legacy DBs may have older column names)
 alter table if exists injury_records
   add column if not exists date_of_injury timestamptz,
-  add column if not exists injury_date date;
+  add column if not exists injury_date date,
+  add column if not exists body_part text;
 
 do $$
 begin
@@ -131,6 +159,15 @@ begin
     where table_schema = 'public' and table_name = 'injury_records' and column_name = 'date_of_injury'
   ) then
     execute 'alter table injury_records alter column date_of_injury set default now()';
+  end if;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'injury_records' and column_name = 'body_part'
+  ) then
+    execute 'update injury_records set body_part = coalesce(nullif(trim(body_part), ''''), ''Unspecified'') where body_part is null or trim(body_part) = ''''';
+    execute 'alter table injury_records alter column body_part set default ''Unspecified''';
+    execute 'alter table injury_records alter column body_part set not null';
   end if;
 
   if exists (

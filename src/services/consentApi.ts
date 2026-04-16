@@ -1,5 +1,5 @@
 import { apiJson } from '@/lib/apiClient';
-import { shouldFallbackToDirectDb } from '@/lib/apiFallback';
+import { getErrorMessage, shouldFallbackToDirectDb } from '@/lib/apiFallback';
 import { supabase } from '@/lib/supabase';
 
 export type ConsentPayload = {
@@ -18,6 +18,21 @@ export type ConsentPayload = {
   formData?: Record<string, unknown>;
 };
 
+function getFormTypeCandidates(formType: string): string[] {
+  const normalized = (formType || '').trim().toLowerCase();
+  const base = [normalized].filter(Boolean);
+
+  const map: Record<string, string[]> = {
+    consent_confidentiality: ['consent', 'informed_consent', 'confidentiality'],
+    parental_release: ['parental_consent', 'guardian_consent', 'guardian_release'],
+    photo_media: ['media_release', 'photo_release', 'image_release'],
+    emergency_medical: ['medical_authority', 'emergency_consent', 'emergency_medical_authority'],
+  };
+
+  const extras = map[normalized] ?? [];
+  return Array.from(new Set([...base, ...extras]));
+}
+
 export async function createConsent(payload: ConsentPayload) {
   try {
     return await apiJson('/api/consents', {
@@ -25,7 +40,11 @@ export async function createConsent(payload: ConsentPayload) {
       body: JSON.stringify(payload),
     });
   } catch (error) {
-    if (!shouldFallbackToDirectDb(error)) {
+    const message = getErrorMessage(error).toLowerCase();
+    const canFallback =
+      shouldFallbackToDirectDb(error) ||
+      message.includes('failed to save consent form');
+    if (!canFallback) {
       throw error;
     }
 
@@ -40,10 +59,11 @@ export async function createConsent(payload: ConsentPayload) {
       : new Date().toISOString();
     const validUntilIso = payload.validUntil ? new Date(payload.validUntil).toISOString() : null;
 
+    const formTypeCandidates = getFormTypeCandidates(payload.formType);
     const row: Record<string, unknown> = {
       practitioner_id: practitionerId,
       athlete_id: payload.athleteId,
-      form_type: payload.formType,
+      form_type: formTypeCandidates[0] || payload.formType,
       status: payload.status ?? 'signed',
       signed_by: payload.signedBy,
       signed_at: signedAtIso,
@@ -62,7 +82,9 @@ export async function createConsent(payload: ConsentPayload) {
       /Could not find the ['"]([^'"]+)['"] column|column ["']([^"']+)["'] of relation ["']consent_forms["'] does not exist/i;
     const removedColumns = new Set<string>();
 
-    for (let attempt = 0; attempt < 6; attempt += 1) {
+    let formTypeCandidateIndex = 0;
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
       const { data, error: insertError } = await supabase
         .from('consent_forms')
         .insert(row)
@@ -74,6 +96,16 @@ export async function createConsent(payload: ConsentPayload) {
       }
 
       const message = insertError.message ?? '';
+      if (
+        insertError.code === '23514' &&
+        message.includes('consent_forms_form_type_check') &&
+        formTypeCandidateIndex < formTypeCandidates.length - 1
+      ) {
+        formTypeCandidateIndex += 1;
+        row.form_type = formTypeCandidates[formTypeCandidateIndex];
+        continue;
+      }
+
       const match = message.match(missingColumnRegex);
       const missingColumn = match?.[1] ?? match?.[2];
 
@@ -95,7 +127,8 @@ export async function deleteConsent(consentId: string) {
       method: 'DELETE',
     });
   } catch (error) {
-    if (!shouldFallbackToDirectDb(error)) {
+    const message = getErrorMessage(error).toLowerCase();
+    if (!shouldFallbackToDirectDb(error) && !message.includes('failed to delete consent form')) {
       throw error;
     }
 
@@ -121,7 +154,8 @@ export async function listConsents(athleteId?: string, preferAthleteToken = fals
       preferAthleteToken,
     });
   } catch (error) {
-    if (!shouldFallbackToDirectDb(error)) {
+    const message = getErrorMessage(error).toLowerCase();
+    if (!shouldFallbackToDirectDb(error) && !message.includes('failed to fetch consent forms')) {
       throw error;
     }
 
