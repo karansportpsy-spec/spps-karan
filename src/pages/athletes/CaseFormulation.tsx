@@ -1246,7 +1246,11 @@ export default function CaseFormulationPage() {
                 ? 'Portal activated. Email notifications are disabled on this deployment. Share the link below with the athlete manually.'
                 : 'Portal activated, but email could not be sent automatically. Share the link below with the athlete manually.'
 
-        alert(`${activationMessage}\n\nAthlete portal link:\n${shareableLink}`)
+        const activationDetail = response.activationEmailDetail
+          ? `\n\nDelivery detail:\n${response.activationEmailDetail}`
+          : ''
+
+        alert(`${activationMessage}${activationDetail}\n\nAthlete portal link:\n${shareableLink}`)
       } else {
         alert('Athlete portal deactivated. Athlete login is now blocked.')
       }
