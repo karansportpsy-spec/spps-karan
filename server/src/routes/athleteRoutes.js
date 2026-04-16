@@ -8,6 +8,7 @@ import {
   parseCsvIds,
   loadAthleteExportData,
   buildAthleteCsv,
+  createAthletePortalInvite,
   sendActivationEmail,
 } from '../services.js';
 import { sanitizeCsvFilename } from '../utils/helpers.js';
@@ -51,12 +52,34 @@ export function registerAthleteRoutes(app) {
 
         const athlete = updateRes.rows[0];
         let activationEmailSent = false;
+        const baseUrl = String(req.headers.origin || env.clientOrigin || '').replace(/\/+$/, '');
+        const portalLoginUrl = `${baseUrl}/athlete/login`;
+        let portalInviteUrl = null;
+
+        if (payload.isPortalActivated && athlete.email) {
+          try {
+            const invite = await createAthletePortalInvite({
+              practitionerId: req.user.id,
+              athleteId: athlete.id,
+              email: athlete.email,
+            });
+            if (invite?.token) {
+              portalInviteUrl = `${baseUrl}/athlete/accept-invite?token=${invite.token}&email=${encodeURIComponent(
+                athlete.email
+              )}`;
+            }
+          } catch (inviteErr) {
+            console.error('[SPPS API] create portal invite failed:', inviteErr);
+          }
+        }
 
         if (payload.isPortalActivated && payload.sendActivationEmail && athlete.email) {
           try {
             activationEmailSent = await sendActivationEmail({
               to: athlete.email,
               athleteName: `${athlete.first_name} ${athlete.last_name}`,
+              portalLoginUrl,
+              inviteUrl: portalInviteUrl,
             });
 
             if (activationEmailSent) {
@@ -78,6 +101,8 @@ export function registerAthleteRoutes(app) {
             : 'Athlete portal deactivated.',
           athlete,
           activationEmailSent,
+          portalLoginUrl: payload.isPortalActivated ? portalLoginUrl : null,
+          portalInviteUrl: payload.isPortalActivated ? portalInviteUrl : null,
         });
       } catch (err) {
         if (err instanceof z.ZodError) {

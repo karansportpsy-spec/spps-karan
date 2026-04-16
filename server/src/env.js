@@ -23,5 +23,5 @@ export const env = {
   smtpUser: process.env.SMTP_USER || '',
   smtpPass: process.env.SMTP_PASS || '',
   smtpFrom: process.env.SMTP_FROM || 'SPPS <no-reply@spps.local>',
-  enableActivationEmail: String(process.env.ENABLE_ACTIVATION_EMAIL || 'false') === 'true',
+  enableActivationEmail: String(process.env.ENABLE_ACTIVATION_EMAIL || 'true') === 'true',
 };

@@ -1218,6 +1218,29 @@ export default function CaseFormulationPage() {
 
       await refetchAthletes()
       await refetchDailySummary()
+
+      if (nextActivated) {
+        const shareableLink =
+          response.portalInviteUrl ||
+          response.portalLoginUrl ||
+          `${window.location.origin.replace(/\/+$/, '')}/athlete/login`
+
+        if (!response.activationEmailSent && shareableLink) {
+          try {
+            await navigator.clipboard.writeText(shareableLink)
+          } catch {
+            // Clipboard may be blocked; we still show the link in the alert text.
+          }
+        }
+
+        const activationMessage = response.activationEmailSent
+          ? `Portal activated and activation email sent to ${athlete.email || 'athlete email'}.`
+          : 'Portal activated, but email could not be sent automatically. Share the link below with the athlete manually.'
+
+        alert(`${activationMessage}\n\nAthlete portal link:\n${shareableLink}`)
+      } else {
+        alert('Athlete portal deactivated. Athlete login is now blocked.')
+      }
     } catch (err: any) {
       alert(err?.message ?? 'Failed to update portal activation.')
     } finally {

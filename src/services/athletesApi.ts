@@ -50,7 +50,13 @@ export async function setAthletePortalActivation(
   sendActivationEmail = false
 ) {
   try {
-    return await apiJson<{ message: string; athlete: any; activationEmailSent: boolean }>(
+    return await apiJson<{
+      message: string;
+      athlete: any;
+      activationEmailSent: boolean;
+      portalLoginUrl?: string | null;
+      portalInviteUrl?: string | null;
+    }>(
       `/api/athletes/${athleteId}/portal-activation`,
       {
         method: 'PATCH',
@@ -69,6 +75,10 @@ export async function setAthletePortalActivation(
     }
 
     const nowIso = new Date().toISOString();
+    const baseUrl = window.location.origin.replace(/\/+$/, '');
+    const portalLoginUrl = `${baseUrl}/athlete/login`;
+    let portalInviteUrl: string | null = null;
+    let activationEmailSent = false;
     const updatePayload: Record<string, unknown> = {
       is_portal_activated: isPortalActivated,
       portal_activated_at: isPortalActivated ? nowIso : null,
@@ -79,15 +89,61 @@ export async function setAthletePortalActivation(
       .update(updatePayload)
       .eq('id', athleteId)
       .eq('practitioner_id', practitionerId)
-      .select('id,is_portal_activated,portal_activated_at')
+      .select('id,email,is_portal_activated,portal_activated_at')
       .single();
 
     if (updateError) throw updateError;
 
+    if (isPortalActivated && data?.email) {
+      try {
+        const { data: inviteData } = await supabase
+          .from('athlete_invites')
+          .insert({
+            practitioner_id: practitionerId,
+            athlete_id: athleteId,
+            email: data.email,
+          })
+          .select('token')
+          .single();
+
+        if (inviteData?.token) {
+          portalInviteUrl = `${baseUrl}/athlete/accept-invite?token=${inviteData.token}&email=${encodeURIComponent(
+            data.email
+          )}`;
+        }
+      } catch {
+        // Invite table might not be available in fallback mode.
+      }
+
+      if (sendActivationEmail) {
+        // Fallback notification path when API routes are unavailable.
+        const { error: resetErr } = await supabase.auth.resetPasswordForEmail(data.email, {
+          redirectTo: portalInviteUrl || portalLoginUrl,
+        });
+        if (!resetErr) {
+          activationEmailSent = true;
+        } else {
+          const { error: otpErr } = await supabase.auth.signInWithOtp({
+            email: data.email,
+            options: {
+              emailRedirectTo: portalInviteUrl || portalLoginUrl,
+              shouldCreateUser: true,
+              data: {
+                role: 'athlete',
+              },
+            },
+          });
+          activationEmailSent = !otpErr;
+        }
+      }
+    }
+
     return {
       message: isPortalActivated ? 'Athlete portal activated.' : 'Athlete portal deactivated.',
       athlete: data,
-      activationEmailSent: false,
+      activationEmailSent,
+      portalLoginUrl: isPortalActivated ? portalLoginUrl : null,
+      portalInviteUrl: isPortalActivated ? portalInviteUrl : null,
     };
   }
 }

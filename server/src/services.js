@@ -3,6 +3,7 @@ import { Parser } from 'json2csv';
 
 import { env } from './env.js';
 import { pool } from './db.js';
+import { supabaseAdmin } from './supabase.js';
 import { buildConversationKey } from './utils/helpers.js';
 
 let smtpTransporter = null;
@@ -24,23 +25,75 @@ export function getSmtpTransporter() {
   return smtpTransporter;
 }
 
-export async function sendActivationEmail({ to, athleteName }) {
+function sanitizeBaseUrl(rawUrl) {
+  if (!rawUrl) return env.clientOrigin.replace(/\/+$/, '');
+  return String(rawUrl).replace(/\/+$/, '');
+}
+
+export async function createAthletePortalInvite({ practitionerId, athleteId, email }) {
+  try {
+    const insertRes = await pool.query(
+      `insert into athlete_invites(practitioner_id, athlete_id, email)
+       values ($1, $2, $3)
+       returning token, expires_at`,
+      [practitionerId, athleteId, email]
+    );
+
+    return insertRes.rows[0] || null;
+  } catch (err) {
+    // If the legacy invites table doesn't exist, we still return a login link fallback.
+    if (err && typeof err === 'object' && err.code === '42P01') {
+      return null;
+    }
+    throw err;
+  }
+}
+
+export async function sendActivationEmail({ to, athleteName, portalLoginUrl, inviteUrl }) {
   if (!env.enableActivationEmail) return false;
   const transporter = getSmtpTransporter();
-  if (!transporter) return false;
 
-  await transporter.sendMail({
-    from: env.smtpFrom,
-    to,
-    subject: 'Your SPPS athlete portal is activated',
-    text:
-      `Hello ${athleteName},\n\n` +
-      'Your athlete portal has been activated by your practitioner. ' +
-      'You can now sign in and access assigned intervention programs, daily logs, and chat.\n\n' +
-      'Regards,\nSPPS Team',
+  const loginUrl = portalLoginUrl || `${sanitizeBaseUrl(env.clientOrigin)}/athlete/login`;
+  const inviteLine = inviteUrl
+    ? `To create your portal password for first-time access, open this secure link:\n${inviteUrl}\n\n`
+    : '';
+
+  if (transporter) {
+    await transporter.sendMail({
+      from: env.smtpFrom,
+      to,
+      subject: 'Your SPPS athlete portal is activated',
+      text:
+        `Hello ${athleteName},\n\n` +
+        'Your athlete portal has been activated by your practitioner. ' +
+        'You can now access assigned intervention programs, daily logs, and chat.\n\n' +
+        inviteLine +
+        `Athlete Portal Login:\n${loginUrl}\n\n` +
+        'Regards,\nSPPS Team',
+    });
+    return true;
+  }
+
+  // SMTP not configured: fallback to Supabase Auth transactional email flow.
+  const resetResult = await supabaseAdmin.auth.resetPasswordForEmail(to, {
+    redirectTo: inviteUrl || loginUrl,
   });
+  if (!resetResult.error) {
+    return true;
+  }
 
-  return true;
+  const inviteResult = await supabaseAdmin.auth.admin.inviteUserByEmail(to, {
+    redirectTo: inviteUrl || loginUrl,
+    data: {
+      role: 'athlete',
+      athlete_name: athleteName,
+    },
+  });
+  if (!inviteResult.error) {
+    return true;
+  }
+
+  return false;
 }
 
 export async function getAthleteByPortalUserId(userId) {
