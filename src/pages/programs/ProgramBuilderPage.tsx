@@ -12,20 +12,22 @@ import AppShell from '@/components/layout/AppShell'
 import { PageHeader, Button, Card, Badge, Modal, Input, Select, Spinner, EmptyState } from '@/components/ui'
 import { useAthletes } from '@/hooks/useAthletes'
 import { useAuth } from '@/contexts/AuthContext'
+import { isMissingRelationError } from '@/lib/apiFallback'
 import { supabase } from '@/lib/supabase'
 import { fmtDate } from '@/lib/utils'
+import { assignInterventionProgram } from '@/services/interventionsApi'
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// -- Constants ----------------------------------------------------------
 
 const CATEGORIES = [
-  { value: 'anxiety_management',       label: 'Anxiety Management',       emoji: '😰', color: 'bg-red-100 text-red-700' },
-  { value: 'performance_enhancement',  label: 'Performance Enhancement',  emoji: '🚀', color: 'bg-blue-100 text-blue-700' },
-  { value: 'mindfulness',             label: 'Mindfulness',              emoji: '🧘', color: 'bg-teal-100 text-teal-700' },
-  { value: 'goal_setting',            label: 'Goal Setting',             emoji: '🎯', color: 'bg-amber-100 text-amber-700' },
-  { value: 'imagery',                 label: 'Imagery & Visualisation',  emoji: '🌅', color: 'bg-purple-100 text-purple-700' },
-  { value: 'relaxation',              label: 'Relaxation',               emoji: '🌿', color: 'bg-green-100 text-green-700' },
-  { value: 'confidence',              label: 'Confidence Building',      emoji: '💪', color: 'bg-orange-100 text-orange-700' },
-  { value: 'custom',                  label: 'Custom',                   emoji: '⚙️', color: 'bg-gray-100 text-gray-700' },
+  { value: 'anxiety_management',       label: 'Anxiety Management',       emoji: 'ANX', color: 'bg-red-100 text-red-700' },
+  { value: 'performance_enhancement',  label: 'Performance Enhancement',  emoji: 'PERF', color: 'bg-blue-100 text-blue-700' },
+  { value: 'mindfulness',             label: 'Mindfulness',              emoji: 'MIND', color: 'bg-teal-100 text-teal-700' },
+  { value: 'goal_setting',            label: 'Goal Setting',             emoji: 'GOAL', color: 'bg-amber-100 text-amber-700' },
+  { value: 'imagery',                 label: 'Imagery & Visualisation',  emoji: 'IMG', color: 'bg-purple-100 text-purple-700' },
+  { value: 'relaxation',              label: 'Relaxation',               emoji: 'RELAX', color: 'bg-green-100 text-green-700' },
+  { value: 'confidence',              label: 'Confidence Building',      emoji: 'CONF', color: 'bg-orange-100 text-orange-700' },
+  { value: 'custom',                  label: 'Custom',                   emoji: 'CUSTOM', color: 'bg-gray-100 text-gray-700' },
 ]
 
 const TASK_TYPES = [
@@ -48,13 +50,41 @@ function getTaskTypeMeta(tt: string) {
   return TASK_TYPES.find(t => t.value === tt) ?? TASK_TYPES[0]
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// -- Types --------------------------------------------------------------
 
 interface Program { id: string; practitioner_id: string; title: string; description?: string; category?: string; duration_weeks?: number; is_template: boolean; created_at: string }
 interface Task { id: string; program_id: string; title: string; description?: string; task_type: string; content_url?: string; content_text?: string; week_number?: number; day_of_week?: number; duration_minutes?: number; is_mandatory: boolean; sort_order: number }
 interface Assignment { id: string; program_id: string; athlete_id: string; practitioner_id: string; start_date: string; end_date?: string; status: string; notes?: string; assigned_at: string; athlete?: { first_name: string; last_name: string; sport: string } }
 
-// ── Hooks ─────────────────────────────────────────────────────────────────────
+function mapAthleteInterventionToAssignment(row: any): Assignment {
+  const statusMap: Record<string, string> = {
+    assigned: 'active',
+    in_progress: 'active',
+    paused: 'paused',
+    completed: 'completed',
+  }
+
+  return {
+    id: row.id,
+    program_id: row.intervention_program_id,
+    athlete_id: row.athlete_id,
+    practitioner_id: row.practitioner_id,
+    start_date: (row.assigned_at || '').slice(0, 10),
+    end_date: row.due_date ?? undefined,
+    status: statusMap[row.status] ?? row.status ?? 'active',
+    notes: row.notes ?? undefined,
+    assigned_at: row.assigned_at,
+    athlete: row.athlete
+      ? {
+          first_name: row.athlete.first_name,
+          last_name: row.athlete.last_name,
+          sport: row.athlete.sport,
+        }
+      : undefined,
+  }
+}
+
+// -- Hooks --------------------------------------------------------------
 
 function usePrograms() {
   const { user } = useAuth()
@@ -75,8 +105,32 @@ function useProgramTasks(programId?: string) {
     enabled: !!programId,
     queryFn: async () => {
       const { data, error } = await supabase.from('intervention_tasks').select('*').eq('program_id', programId!).order('week_number').order('day_of_week').order('sort_order')
-      if (error) throw error
-      return data as Task[]
+      if (!error) return data as Task[]
+
+      if (!isMissingRelationError(error)) throw error
+
+      const { data: programRow, error: programError } = await supabase
+        .from('intervention_programs')
+        .select('milestones')
+        .eq('id', programId!)
+        .single()
+      if (programError) throw programError
+
+      const milestones = Array.isArray(programRow?.milestones) ? programRow.milestones : []
+      return milestones.map((milestone: any, index: number) => ({
+        id: `milestone-${index}`,
+        program_id: programId!,
+        title: String(milestone || `Milestone ${index + 1}`),
+        description: '',
+        task_type: 'exercise',
+        content_text: String(milestone || ''),
+        content_url: '',
+        week_number: index + 1,
+        day_of_week: undefined,
+        duration_minutes: 15,
+        is_mandatory: true,
+        sort_order: index,
+      }))
     },
   })
 }
@@ -90,13 +144,26 @@ function useAssignments(programId?: string) {
       let q = supabase.from('athlete_programs').select('*, athlete:athletes(first_name,last_name,sport)').eq('practitioner_id', user!.id)
       if (programId) q = q.eq('program_id', programId)
       const { data, error } = await q.order('assigned_at', { ascending: false })
-      if (error) throw error
-      return data as Assignment[]
+      if (!error) return data as Assignment[]
+
+      if (!isMissingRelationError(error)) {
+        throw error
+      }
+
+      let fallbackQ = supabase
+        .from('athlete_interventions')
+        .select('*, athlete:athletes(first_name,last_name,sport)')
+        .eq('practitioner_id', user!.id)
+      if (programId) fallbackQ = fallbackQ.eq('intervention_program_id', programId)
+
+      const { data: fallbackRows, error: fallbackError } = await fallbackQ.order('assigned_at', { ascending: false })
+      if (fallbackError) throw fallbackError
+      return (fallbackRows ?? []).map(mapAthleteInterventionToAssignment)
     },
   })
 }
 
-// ── Task Editor Modal ─────────────────────────────────────────────────────────
+// -- Task Editor Modal --------------------------------------------------
 
 function TaskEditorModal({ task, programWeeks, onSave, onClose }: {
   task?: Task | null; programWeeks: number; onSave: (t: Partial<Task>) => Promise<void>; onClose: () => void
@@ -118,7 +185,10 @@ function TaskEditorModal({ task, programWeeks, onSave, onClose }: {
   async function handleSubmit() {
     if (!form.title.trim()) return
     setSaving(true)
-    await onSave(form)
+    await onSave({
+      ...form,
+      day_of_week: form.day_of_week ?? undefined,
+    })
     setSaving(false)
     onClose()
   }
@@ -130,7 +200,7 @@ function TaskEditorModal({ task, programWeeks, onSave, onClose }: {
       <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl">
         <div className="flex items-center justify-between p-5 border-b sticky top-0 bg-white z-10">
           <h2 className="font-bold text-gray-900">{task ? 'Edit Task' : 'Add Task'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">x</button>
         </div>
 
         <div className="p-5 space-y-4">
@@ -182,11 +252,11 @@ function TaskEditorModal({ task, programWeeks, onSave, onClose }: {
           <div>
             <label className="text-sm font-medium text-gray-700 block mb-1">Instructions / Content</label>
             <textarea value={form.content_text} onChange={e => setForm(f => ({ ...f, content_text: e.target.value }))} rows={3}
-              placeholder="Detailed instructions the athlete will see…"
+              placeholder="Detailed instructions the athlete will see..."
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-400" />
           </div>
 
-          <Input label="Content URL (optional)" value={form.content_url ?? ''} onChange={e => setForm(f => ({ ...f, content_url: e.target.value }))} placeholder="https://youtube.com/watch?v=…" />
+          <Input label="Content URL (optional)" value={form.content_url ?? ''} onChange={e => setForm(f => ({ ...f, content_url: e.target.value }))} placeholder="https://youtube.com/watch?v=..." />
 
           <Input label="Description (optional)" value={form.description ?? ''} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Brief description for practitioner reference" />
 
@@ -207,7 +277,7 @@ function TaskEditorModal({ task, programWeeks, onSave, onClose }: {
   )
 }
 
-// ── Assign Program Modal ──────────────────────────────────────────────────────
+// -- Assign Program Modal -----------------------------------------------
 
 function AssignModal({ program, athletes, existingAssignments, onAssign, onClose }: {
   program: Program; athletes: any[]; existingAssignments: Assignment[]
@@ -238,7 +308,7 @@ function AssignModal({ program, athletes, existingAssignments, onAssign, onClose
           <span className="text-xl">{catMeta.emoji}</span>
           <div>
             <p className="font-bold text-sm">{program.title}</p>
-            <p className="text-xs opacity-75">{program.duration_weeks ?? '?'} weeks · {catMeta.label}</p>
+            <p className="text-xs opacity-75">{program.duration_weeks ?? '?'} weeks - {catMeta.label}</p>
           </div>
         </div>
 
@@ -253,14 +323,14 @@ function AssignModal({ program, athletes, existingAssignments, onAssign, onClose
               <label className="text-sm font-medium text-gray-700 block mb-1">Select Athlete</label>
               <select value={selectedId} onChange={e => setSelectedId(e.target.value)}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
-                <option value="">— Choose athlete —</option>
-                {available.map(a => <option key={a.id} value={a.id}>{a.first_name} {a.last_name} · {a.sport}</option>)}
+                <option value="">- Choose athlete -</option>
+                {available.map(a => <option key={a.id} value={a.id}>{a.first_name} {a.last_name} - {a.sport}</option>)}
               </select>
             </div>
             <Input label="Start Date" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
             <div>
               <label className="text-sm font-medium text-gray-700 block mb-1">Notes for this athlete (optional)</label>
-              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Any specific instructions…"
+              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Any specific instructions..."
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-400" />
             </div>
             <Button onClick={handleAssign} loading={saving} disabled={!selectedId} className="w-full">
@@ -273,7 +343,7 @@ function AssignModal({ program, athletes, existingAssignments, onAssign, onClose
   )
 }
 
-// ── Program Detail View ───────────────────────────────────────────────────────
+// -- Program Detail View -------------------------------------------------
 
 function ProgramDetail({ program, onBack }: { program: Program; onBack: () => void }) {
   const { user } = useAuth()
@@ -289,38 +359,131 @@ function ProgramDetail({ program, onBack }: { program: Program; onBack: () => vo
   const catMeta = getCategoryMeta(program.category)
 
   async function handleSaveTask(payload: Partial<Task>) {
-    if (editingTask?.id) {
-      await supabase.from('intervention_tasks').update(payload).eq('id', editingTask.id)
-    } else {
-      await supabase.from('intervention_tasks').insert({ ...payload, program_id: program.id })
+    try {
+      if (editingTask?.id) {
+        const { error } = await supabase.from('intervention_tasks').update(payload).eq('id', editingTask.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('intervention_tasks').insert({ ...payload, program_id: program.id })
+        if (error) throw error
+      }
+    } catch (err) {
+      if (!isMissingRelationError(err)) throw err
+
+      const { data: programRow, error: readError } = await supabase
+        .from('intervention_programs')
+        .select('milestones')
+        .eq('id', program.id)
+        .single()
+      if (readError) throw readError
+
+      const milestones = Array.isArray(programRow?.milestones) ? [...programRow.milestones] : []
+      const content = String(payload.title || payload.content_text || '').trim()
+      if (!content) return
+
+      const editIndex =
+        typeof editingTask?.id === 'string' && editingTask.id.startsWith('milestone-')
+          ? Number(editingTask.id.replace('milestone-', ''))
+          : -1
+
+      if (Number.isInteger(editIndex) && editIndex >= 0 && editIndex < milestones.length) {
+        milestones[editIndex] = content
+      } else {
+        milestones.push(content)
+      }
+
+      const { error: updateError } = await supabase
+        .from('intervention_programs')
+        .update({ milestones })
+        .eq('id', program.id)
+      if (updateError) throw updateError
     }
     qc.invalidateQueries({ queryKey: ['intervention_tasks', program.id] })
+    qc.invalidateQueries({ queryKey: ['intervention_programs'] })
   }
 
   async function handleDeleteTask(taskId: string) {
     if (!confirm('Delete this task?')) return
-    await supabase.from('intervention_tasks').delete().eq('id', taskId)
+    try {
+      const { error } = await supabase.from('intervention_tasks').delete().eq('id', taskId)
+      if (error) throw error
+    } catch (err) {
+      if (!isMissingRelationError(err)) throw err
+
+      const milestoneIndex =
+        typeof taskId === 'string' && taskId.startsWith('milestone-')
+          ? Number(taskId.replace('milestone-', ''))
+          : -1
+      if (!Number.isInteger(milestoneIndex) || milestoneIndex < 0) return
+
+      const { data: programRow, error: readError } = await supabase
+        .from('intervention_programs')
+        .select('milestones')
+        .eq('id', program.id)
+        .single()
+      if (readError) throw readError
+
+      const milestones = Array.isArray(programRow?.milestones) ? [...programRow.milestones] : []
+      if (milestoneIndex < milestones.length) {
+        milestones.splice(milestoneIndex, 1)
+        const { error: updateError } = await supabase
+          .from('intervention_programs')
+          .update({ milestones })
+          .eq('id', program.id)
+        if (updateError) throw updateError
+      }
+    }
     qc.invalidateQueries({ queryKey: ['intervention_tasks', program.id] })
+    qc.invalidateQueries({ queryKey: ['intervention_programs'] })
   }
 
   async function handleAssign(athleteId: string, startDate: string, notes: string) {
     const endDate = program.duration_weeks
       ? new Date(new Date(startDate).getTime() + program.duration_weeks * 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
       : null
-    await supabase.from('athlete_programs').insert({
-      program_id: program.id, athlete_id: athleteId, practitioner_id: user!.id,
-      start_date: startDate, end_date: endDate, notes: notes || null,
-    })
+    try {
+      const { error } = await supabase.from('athlete_programs').insert({
+        program_id: program.id, athlete_id: athleteId, practitioner_id: user!.id,
+        start_date: startDate, end_date: endDate, notes: notes || null,
+      })
+      if (error) throw error
+    } catch (err) {
+      if (!isMissingRelationError(err)) throw err
+      await assignInterventionProgram({
+        athleteId,
+        programId: program.id,
+        title: program.title,
+        description: program.description,
+        durationWeeks: program.duration_weeks ?? undefined,
+        dueDate: endDate ?? undefined,
+      })
+    }
+
     // Send notification to athlete
-    await supabase.from('athlete_notifications').insert({
-      athlete_id: athleteId, type: 'new_intervention', title: 'New Program Assigned!',
-      body: `Your practitioner has assigned "${program.title}" — check your Tasks tab.`,
-    }).catch(() => {})
+    try {
+      await supabase.from('athlete_notifications').insert({
+        athlete_id: athleteId, type: 'new_intervention', title: 'New Program Assigned!',
+        body: `Your practitioner has assigned "${program.title}" — check your Tasks tab.`,
+      })
+    } catch {
+      // non-blocking notification
+    }
     qc.invalidateQueries({ queryKey: ['athlete_programs'] })
   }
 
   async function handlePauseResume(assignmentId: string, newStatus: string) {
-    await supabase.from('athlete_programs').update({ status: newStatus }).eq('id', assignmentId)
+    try {
+      const { error } = await supabase.from('athlete_programs').update({ status: newStatus }).eq('id', assignmentId)
+      if (error) throw error
+    } catch (err) {
+      if (!isMissingRelationError(err)) throw err
+      const mappedStatus = newStatus === 'active' ? 'in_progress' : newStatus
+      const { error: updateError } = await supabase
+        .from('athlete_interventions')
+        .update({ status: mappedStatus })
+        .eq('id', assignmentId)
+      if (updateError) throw updateError
+    }
     qc.invalidateQueries({ queryKey: ['athlete_programs'] })
   }
 
@@ -348,7 +511,7 @@ function ProgramDetail({ program, onBack }: { program: Program; onBack: () => vo
             </div>
             <h1 className="text-xl font-bold text-gray-900">{program.title}</h1>
             {program.description && <p className="text-sm text-gray-500 mt-1">{program.description}</p>}
-            <p className="text-xs text-gray-400 mt-1">{program.duration_weeks ?? '?'} weeks · {tasks.length} tasks · {assignments.filter(a => a.status === 'active').length} active athletes</p>
+            <p className="text-xs text-gray-400 mt-1">{program.duration_weeks ?? '?'} weeks - {tasks.length} tasks - {assignments.filter(a => a.status === 'active').length} active athletes</p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -391,7 +554,7 @@ function ProgramDetail({ program, onBack }: { program: Program; onBack: () => vo
               <div key={week}>
                 <h3 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
                   <Calendar size={14} className="text-blue-500" /> Week {week}
-                  <span className="text-xs text-gray-400 font-normal">· {tasksByWeek[week].length} tasks</span>
+                  <span className="text-xs text-gray-400 font-normal">- {tasksByWeek[week].length} tasks</span>
                 </h3>
                 <div className="space-y-2">
                   {tasksByWeek[week].map(task => {
@@ -408,8 +571,8 @@ function ProgramDetail({ program, onBack }: { program: Program; onBack: () => vo
                             {!task.is_mandatory && <span className="text-xs text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">optional</span>}
                           </div>
                           <p className="text-xs text-gray-400">
-                            {ttMeta.label} · {task.duration_minutes ?? '?'} min
-                            {task.day_of_week != null ? ` · ${DAY_LABELS[task.day_of_week]}` : ' · Any day'}
+                            {ttMeta.label} - {task.duration_minutes ?? '?'} min
+                            {task.day_of_week != null ? ` - ${DAY_LABELS[task.day_of_week]}` : ' - Any day'}
                           </p>
                         </div>
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -456,7 +619,7 @@ function ProgramDetail({ program, onBack }: { program: Program; onBack: () => vo
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-gray-900">{a.athlete?.first_name} {a.athlete?.last_name}</p>
-                        <p className="text-xs text-gray-400">{a.athlete?.sport} · Started {fmtDate(a.start_date)}</p>
+                        <p className="text-xs text-gray-400">{a.athlete?.sport} - Started {fmtDate(a.start_date)}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -511,7 +674,7 @@ function ProgramDetail({ program, onBack }: { program: Program; onBack: () => vo
   )
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+// -- Main Page ----------------------------------------------------------
 
 export default function ProgramBuilderPage() {
   const { user } = useAuth()
@@ -573,17 +736,22 @@ export default function ProgramBuilderPage() {
       category: p.category, duration_weeks: p.duration_weeks, is_template: p.is_template,
     }).select().single()
     if (!newProg) return
-    // Copy tasks
-    const { data: tasks } = await supabase.from('intervention_tasks').select('*').eq('program_id', p.id)
-    if (tasks?.length) {
-      await supabase.from('intervention_tasks').insert(
-        tasks.map(t => ({ ...t, id: undefined, program_id: newProg.id, created_at: undefined }))
-      )
+    // Copy tasks when legacy task table exists.
+    try {
+      const { data: tasks, error: taskReadError } = await supabase.from('intervention_tasks').select('*').eq('program_id', p.id)
+      if (taskReadError) throw taskReadError
+      if (tasks?.length) {
+        await supabase.from('intervention_tasks').insert(
+          tasks.map(t => ({ ...t, id: undefined, program_id: newProg.id, created_at: undefined }))
+        )
+      }
+    } catch (err) {
+      if (!isMissingRelationError(err)) throw err
     }
     qc.invalidateQueries({ queryKey: ['intervention_programs'] })
   }
 
-  // ── Detail view ──────────────────────────────────────────────────────────
+  // -- Detail view ---------------------------------------------------
   if (selectedProgram) {
     return (
       <AppShell>
@@ -592,12 +760,12 @@ export default function ProgramBuilderPage() {
     )
   }
 
-  // ── Programs list ────────────────────────────────────────────────────────
+  // -- Programs list -------------------------------------------------
   return (
     <AppShell>
       <PageHeader
         title="Intervention Programs"
-        subtitle={`${programs.length} programs · ${allAssignments.filter(a => a.status === 'active').length} active assignments`}
+        subtitle={`${programs.length} programs - ${allAssignments.filter(a => a.status === 'active').length} active assignments`}
         action={<Button onClick={openCreate}><Plus size={14} /> New Program</Button>}
       />
 
@@ -677,7 +845,7 @@ export default function ProgramBuilderPage() {
           <div>
             <label className="text-sm font-medium text-gray-700 block mb-1">Description (optional)</label>
             <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2}
-              placeholder="Brief description of the program goals and approach…"
+              placeholder="Brief description of the program goals and approach..."
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-400" />
           </div>
 
@@ -692,3 +860,5 @@ export default function ProgramBuilderPage() {
     </AppShell>
   )
 }
+
+

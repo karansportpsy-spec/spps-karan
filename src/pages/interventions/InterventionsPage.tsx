@@ -646,7 +646,7 @@ function ProtocolBuilder({ athletes, initialFramework, onCreate, onCancel }: {
         ...sessions.map((s, i) => (i + 1) + '. ' + s),
         notes ? '\nNOTES:\n' + notes : '',
       ].filter(Boolean).join('\n')
-      await onCreate({ athlete_id: athleteId, category: fw.category, title, description: fw.theory.slice(0, 200), protocol, rating: 0, notes })
+      await onCreate({ athlete_id: athleteId, category: fw.category, title, description: fw.theory.slice(0, 200), protocol, notes })
     } catch (err: any) {
       setSaveError('Save failed: ' + (err?.message ?? 'unknown error')); setSaving(false)
     }
@@ -882,8 +882,9 @@ export default function InterventionsPage() {
   async function handleSave() {
     setSaving(true); setSaveError('')
     try {
-      if (editing) await updateIntervention.mutateAsync({ id: editing.id, ...form })
-      else await createIntervention.mutateAsync(form)
+      const payload = { ...form, rating: form.rating > 0 ? form.rating : undefined }
+      if (editing) await updateIntervention.mutateAsync({ id: editing.id, ...payload })
+      else await createIntervention.mutateAsync(payload)
       setModalOpen(false)
     } catch (err: any) {
       setSaveError('Save failed: ' + (err?.message ?? 'unknown error'))
@@ -891,7 +892,10 @@ export default function InterventionsPage() {
   }
 
   async function handleProtocolCreate(payload: any) {
-    await createIntervention.mutateAsync(payload)
+    await createIntervention.mutateAsync({
+      ...payload,
+      rating: typeof payload?.rating === 'number' && payload.rating > 0 ? payload.rating : undefined,
+    })
     setBuilderFw(null); setTab('my')
   }
 

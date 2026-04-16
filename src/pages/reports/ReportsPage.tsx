@@ -262,6 +262,8 @@ Write in third person, professional clinical language. Use the real scores and d
         is_ai_generated: aiGenerated,
       })
       setModalOpen(false)
+    } catch (err: any) {
+      alert(err?.message ?? 'Failed to save report.')
     } finally {
       setSaving(false)
     }

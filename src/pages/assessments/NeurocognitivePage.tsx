@@ -173,6 +173,8 @@ export default function NeurocognitivePage() {
       })
       setModalOpen(false)
       setForm(blankForm())
+    } catch (err: any) {
+      alert(err?.message ?? 'Failed to save neurocognitive assessment.')
     } finally {
       setSaving(false)
     }

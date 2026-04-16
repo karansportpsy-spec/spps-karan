@@ -123,7 +123,11 @@ export function useCreateIntervention() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (payload: Omit<Intervention, 'id' | 'practitioner_id' | 'created_at' | 'updated_at'>) => {
-      const { data, error } = await supabase.from('interventions').insert({ ...payload, practitioner_id: user!.id }).select().single()
+      const normalizedPayload = {
+        ...payload,
+        rating: typeof payload.rating === 'number' && payload.rating > 0 ? payload.rating : null,
+      }
+      const { data, error } = await supabase.from('interventions').insert({ ...normalizedPayload, practitioner_id: user!.id }).select().single()
       if (error) throw error
       return data as Intervention
     },
@@ -135,7 +139,16 @@ export function useUpdateIntervention() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async ({ id, ...payload }: Partial<Intervention> & { id: string }) => {
-      const { data, error } = await supabase.from('interventions').update(payload).eq('id', id).select().single()
+      const normalizedPayload = {
+        ...payload,
+        rating:
+          typeof payload.rating === 'number'
+            ? payload.rating > 0
+              ? payload.rating
+              : null
+            : payload.rating,
+      }
+      const { data, error } = await supabase.from('interventions').update(normalizedPayload).eq('id', id).select().single()
       if (error) throw error
       return data as Intervention
     },

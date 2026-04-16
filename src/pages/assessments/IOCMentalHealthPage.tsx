@@ -6,7 +6,7 @@ import { useAthletes } from '@/hooks/useAthletes'
 import { useAuth } from '@/contexts/AuthContext'
 import { saveAssessmentBundle } from '@/services/assessmentApi'
 
-// ── Question Data ─────────────────────────────────────────────
+// -- Question Data ------------------------------------------------------
 
 const MHS_ITEMS = [
   'I have had difficulty concentrating during training or competition',
@@ -34,9 +34,9 @@ const DEPSCR_ITEMS = [
   'Trouble falling or staying asleep, or sleeping too much',
   'Feeling tired or having little energy',
   'Poor appetite or overeating',
-  'Feeling bad about yourself — or that you are a failure or have let yourself or your family down',
+  'Feeling bad about yourself - or that you are a failure or have let yourself or your family down',
   'Trouble concentrating on things, such as reading or watching television',
-  'Moving or speaking so slowly that other people could have noticed — or the opposite, being so fidgety or restless',
+  'Moving or speaking so slowly that other people could have noticed - or the opposite, being so fidgety or restless',
   'Thoughts that you would be better off dead, or of hurting yourself in some way',
 ]
 const DEPSCR_OPTIONS = [
@@ -73,12 +73,12 @@ const SLP_INDEX_STD = [
 ]
 
 const AUDIT_QUESTIONS = [
-  { text: 'How often do you have a drink containing alcohol?', options: [{ label: 'Never', value: 0 }, { label: 'Monthly or less', value: 1 }, { label: '2–4 times/month', value: 2 }, { label: '2–3 times/week', value: 3 }, { label: '4+ times/week', value: 4 }] },
-  { text: 'How many standard drinks on a typical drinking day?', options: [{ label: '1–2', value: 0 }, { label: '3–4', value: 1 }, { label: '5–6', value: 2 }, { label: '7–9', value: 3 }, { label: '10 or more', value: 4 }] },
+  { text: 'How often do you have a drink containing alcohol?', options: [{ label: 'Never', value: 0 }, { label: 'Monthly or less', value: 1 }, { label: '2-4 times/month', value: 2 }, { label: '2-3 times/week', value: 3 }, { label: '4+ times/week', value: 4 }] },
+  { text: 'How many standard drinks on a typical drinking day?', options: [{ label: '1-2', value: 0 }, { label: '3-4', value: 1 }, { label: '5-6', value: 2 }, { label: '7-9', value: 3 }, { label: '10 or more', value: 4 }] },
   { text: 'How often have you had 6 or more drinks on one occasion?', options: [{ label: 'Never', value: 0 }, { label: 'Less than monthly', value: 1 }, { label: 'Monthly', value: 2 }, { label: 'Weekly', value: 3 }, { label: 'Daily or almost daily', value: 4 }] },
 ]
 
-// ── Scoring ───────────────────────────────────────────────────
+// -- Scoring ------------------------------------------------------------
 
 function getRisk(score: number, thresholds: { max: number; level: string; color: string; bg: string }[]) {
   return thresholds.find(t => score <= t.max) ?? thresholds[thresholds.length - 1]
@@ -113,7 +113,7 @@ const AUDIT_T = [
   { max: 12, level: 'Harmful', color: 'text-red-700', bg: 'bg-red-50', action: 'Brief counselling and monitoring required.' },
 ]
 
-// ── Steps ─────────────────────────────────────────────────────
+// -- Steps --------------------------------------------------------------
 const STEPS = [
   { id: 'mhs',    label: 'AMHS',   icon: Shield, desc: 'Mental Health Screening Tool', items: 10 },
   { id: 'depscr', label: 'DEPSCR', icon: Brain,  desc: 'Depression screening', items: 9 },
@@ -163,6 +163,7 @@ export default function IOCMentalHealthPage() {
   const [ausc, setAusc] = useState<Record<number, number>>({})
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   const selectedAthlete = athletes.find(a => a.id === athleteId)
 
@@ -188,6 +189,7 @@ export default function IOCMentalHealthPage() {
   async function saveResults() {
     if (!user || !athleteId) return
     setSaving(true)
+    setSaveError('')
     try {
       const scores = {
         AMHS: sum(mhs), DEPSCR: sum(depscr), ANXSCR: sum(anxscr),
@@ -200,18 +202,20 @@ export default function IOCMentalHealthPage() {
           tool: 'MentalHealthScreening',
           scores,
           totalScore,
-          interpretation: `AMHS ${scores.AMHS}/40 · DEPSCR ${scores.DEPSCR}/27 · ANXSCR ${scores.ANXSCR}/21 · SQI ${scores.SQI}/21 · AUSC ${scores.AUSC}/12`,
+          interpretation: `AMHS ${scores.AMHS}/40 - DEPSCR ${scores.DEPSCR}/27 - ANXSCR ${scores.ANXSCR}/21 - SQI ${scores.SQI}/21 - AUSC ${scores.AUSC}/12`,
           notes: 'Mental health bundle saved from IOC screening flow.',
         },
       })
       setSaved(true)
+    } catch (err: any) {
+      setSaveError(err?.message ?? 'Failed to save mental health assessment.')
     } finally {
       setSaving(false)
     }
   }
 
   const athleteOptions = [
-    { value: '', label: '— Select athlete —' },
+    { value: '', label: '- Select athlete -' },
     ...athletes.map(a => ({ value: a.id, label: `${a.first_name} ${a.last_name}` })),
   ]
 
@@ -226,7 +230,7 @@ export default function IOCMentalHealthPage() {
         <div className="mb-6">
           <div className="flex items-center justify-between mb-1">
             <h1 className="text-xl font-bold text-gray-900">Athlete Mental Health Screening</h1>
-            <span className="text-sm text-gray-400">AMHS · DEPSCR · ANXSCR · SQI · AUSC</span>
+            <span className="text-sm text-gray-400">AMHS - DEPSCR - ANXSCR - SQI - AUSC</span>
           </div>
           <div className="w-full bg-gray-100 rounded-full h-2 mt-2">
             <div className="bg-blue-600 h-2 rounded-full transition-all" style={{ width: `${progress}%` }} />
@@ -254,7 +258,7 @@ export default function IOCMentalHealthPage() {
         {step !== 'results' && (
           <Card className="p-4 mb-4">
             <Select label="Athlete" value={athleteId} onChange={e => setAthleteId(e.target.value)} options={athleteOptions} />
-            {!athleteId && <p className="text-xs text-amber-600 mt-1">⚠ Select an athlete before administering</p>}
+            {!athleteId && <p className="text-xs text-amber-600 mt-1">Select an athlete before administering</p>}
           </Card>
         )}
 
@@ -262,9 +266,9 @@ export default function IOCMentalHealthPage() {
           <Card className="p-6">
             <div className="flex items-center gap-2 mb-2">
               <Shield size={18} className="text-blue-600" />
-              <h2 className="font-semibold text-gray-900">AMHS — Athlete Mental Health Screening</h2>
+              <h2 className="font-semibold text-gray-900">AMHS - Athlete Mental Health Screening</h2>
             </div>
-            <p className="text-xs text-gray-400 mb-5">10 items · Over the past 2 weeks</p>
+            <p className="text-xs text-gray-400 mb-5">10 items - Over the past 2 weeks</p>
             {MHS_ITEMS.map((text, i) => (
               <QuestionCard key={i} num={i + 1} total={10} text={text}
                 options={MHS_OPTIONS} value={mhs[i]}
@@ -280,12 +284,12 @@ export default function IOCMentalHealthPage() {
           </Card>
         )}
 
-        {/* ── DEPSCR ─────────────────────────────────────────── */}
+        {/* -- DEPSCR -------------------------------------------------- */}
         {step === 'depscr' && (
           <Card className="p-6">
             <div className="flex items-center gap-2 mb-2">
               <Brain size={18} className="text-purple-600" />
-              <h2 className="font-semibold text-gray-900">DEPSCR — Depression Screening</h2>
+              <h2 className="font-semibold text-gray-900">DEPSCR - Depression Screening</h2>
             </div>
             <p className="text-xs text-gray-400 mb-5">Over the last 2 weeks, how often have you been bothered by the following?</p>
             {DEPSCR_ITEMS.map((text, i) => (
@@ -296,7 +300,7 @@ export default function IOCMentalHealthPage() {
             {depscr[8] >= 1 && (
               <div className="p-4 bg-red-50 rounded-xl border border-red-200 mb-4">
                 <p className="text-red-700 font-medium text-sm flex items-center gap-2">
-                  <AlertTriangle size={16} /> Item 9 flagged — Suicidal ideation indicator
+                  <AlertTriangle size={16} /> Item 9 flagged - Suicidal ideation indicator
                 </p>
                 <p className="text-red-600 text-xs mt-1">Immediate clinical assessment required. Follow your organisation's crisis protocol.</p>
               </div>
@@ -310,12 +314,12 @@ export default function IOCMentalHealthPage() {
           </Card>
         )}
 
-        {/* ── ANXSCR ─────────────────────────────────────────── */}
+        {/* -- ANXSCR -------------------------------------------------- */}
         {step === 'anxscr' && (
           <Card className="p-6">
             <div className="flex items-center gap-2 mb-2">
               <Heart size={18} className="text-rose-600" />
-              <h2 className="font-semibold text-gray-900">ANXSCR — Anxiety Screening</h2>
+              <h2 className="font-semibold text-gray-900">ANXSCR - Anxiety Screening</h2>
             </div>
             <p className="text-xs text-gray-400 mb-5">Over the last 2 weeks, how often have you been bothered by the following?</p>
             {GLOBAL_ANXT_ITEMS.map((text, i) => (
@@ -332,14 +336,14 @@ export default function IOCMentalHealthPage() {
           </Card>
         )}
 
-        {/* ── SQI ──────────────────────────────────────────── */}
+        {/* -- SQI ----------------------------------------------------- */}
         {step === 'sqi' && (
           <Card className="p-6">
             <div className="flex items-center gap-2 mb-2">
               <Moon size={18} className="text-indigo-600" />
-              <h2 className="font-semibold text-gray-900">SQI — Sleep Quality Index</h2>
+              <h2 className="font-semibold text-gray-900">SQI - Sleep Quality Index</h2>
             </div>
-            <p className="text-xs text-gray-400 mb-5">During the past month…</p>
+            <p className="text-xs text-gray-400 mb-5">During the past month...</p>
             {SLP_INDEX_ITEMS.map((q, i) => (
               <QuestionCard key={i} num={i + 1} total={7} text={q.text}
                 options={q.options ?? SLP_INDEX_STD} value={sqi[i]}
@@ -354,14 +358,14 @@ export default function IOCMentalHealthPage() {
           </Card>
         )}
 
-        {/* ── AUSC ───────────────────────────────────────── */}
+        {/* -- AUSC ---------------------------------------------------- */}
         {step === 'ausc' && (
           <Card className="p-6">
             <div className="flex items-center gap-2 mb-2">
               <Wine size={18} className="text-amber-600" />
-              <h2 className="font-semibold text-gray-900">AUSC — Alcohol Use Screening</h2>
+              <h2 className="font-semibold text-gray-900">AUSC - Alcohol Use Screening</h2>
             </div>
-            <p className="text-xs text-gray-400 mb-5">Thinking about the past year…</p>
+            <p className="text-xs text-gray-400 mb-5">Thinking about the past year...</p>
             {AUDIT_QUESTIONS.map((q, i) => (
               <QuestionCard key={i} num={i + 1} total={3} text={q.text}
                 options={q.options} value={ausc[i]}
@@ -376,14 +380,14 @@ export default function IOCMentalHealthPage() {
           </Card>
         )}
 
-        {/* ── RESULTS ───────────────────────────────────────── */}
+        {/* -- RESULTS ------------------------------------------------- */}
         {step === 'results' && (
           <div className="space-y-4">
             <div className="flex items-center gap-3 mb-2">
               <CheckCircle size={24} className="text-green-500" />
               <div>
                 <p className="font-bold text-gray-900">Athlete Mental Health Screening Complete</p>
-                {selectedAthlete && <p className="text-sm text-gray-500">{selectedAthlete.first_name} {selectedAthlete.last_name} · {new Date().toLocaleDateString()}</p>}
+                {selectedAthlete && <p className="text-sm text-gray-500">{selectedAthlete.first_name} {selectedAthlete.last_name} - {new Date().toLocaleDateString()}</p>}
               </div>
             </div>
 
@@ -424,7 +428,7 @@ export default function IOCMentalHealthPage() {
             {depscr[8] >= 1 && (
               <div className="p-4 bg-red-100 rounded-xl border-2 border-red-300">
                 <p className="text-red-800 font-bold flex items-center gap-2">
-                  <AlertTriangle size={18} /> ⚠ CRITICAL FLAG: Suicidal ideation reported (DEPSCR Item 9)
+                  <AlertTriangle size={18} /> CRITICAL FLAG: Suicidal ideation reported (DEPSCR Item 9)
                 </p>
                 <p className="text-red-700 text-sm mt-1">Immediate clinical assessment is required. Follow your organisation's crisis protocol. Do not leave athlete alone.</p>
               </div>
@@ -438,12 +442,14 @@ export default function IOCMentalHealthPage() {
                 loading={saving}
                 disabled={!athleteId || saved}
               >
-                {saved ? '✓ Saved to Profile' : 'Save to Athlete Profile'}
+                {saved ? 'Saved to Profile' : 'Save to Athlete Profile'}
               </Button>
             </div>
+            {saveError ? <p className="text-xs text-red-600">{saveError}</p> : null}
           </div>
         )}
       </div>
     </AppShell>
   )
 }
+

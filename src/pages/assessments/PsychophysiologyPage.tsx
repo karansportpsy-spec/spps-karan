@@ -354,6 +354,8 @@ export default function PsychophysiologyPage() {
       await save.mutateAsync(payload)
       setModalOpen(false)
       setForm(blankForm())
+    } catch (err: any) {
+      alert(err?.message ?? 'Failed to save psychophysiology record.')
     } finally {
       setSaving(false)
     }

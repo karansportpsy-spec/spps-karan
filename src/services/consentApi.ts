@@ -1,4 +1,6 @@
 import { apiJson } from '@/lib/apiClient';
+import { shouldFallbackToDirectDb } from '@/lib/apiFallback';
+import { supabase } from '@/lib/supabase';
 
 export type ConsentPayload = {
   athleteId: string;
@@ -17,21 +19,107 @@ export type ConsentPayload = {
 };
 
 export async function createConsent(payload: ConsentPayload) {
-  return apiJson('/api/consents', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
+  try {
+    return await apiJson('/api/consents', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    if (!shouldFallbackToDirectDb(error)) {
+      throw error;
+    }
+
+    const { data: authData } = await supabase.auth.getUser();
+    const practitionerId = authData.user?.id;
+    if (!practitionerId) {
+      throw error;
+    }
+
+    const signedAtIso = payload.signedAt
+      ? new Date(payload.signedAt).toISOString()
+      : new Date().toISOString();
+    const validUntilIso = payload.validUntil ? new Date(payload.validUntil).toISOString() : null;
+
+    const { data, error: insertError } = await supabase
+      .from('consent_forms')
+      .insert({
+        practitioner_id: practitionerId,
+        athlete_id: payload.athleteId,
+        form_type: payload.formType,
+        status: payload.status ?? 'signed',
+        signed_by: payload.signedBy,
+        signed_at: signedAtIso,
+        signed_timestamp: signedAtIso,
+        valid_until: validUntilIso,
+        notes: payload.notes ?? null,
+        digital_signature: payload.digitalSignature ?? payload.signedBy,
+        guardian_name: payload.guardianName ?? null,
+        guardian_relationship: payload.guardianRelationship ?? null,
+        guardian_email: payload.guardianEmail ?? null,
+        guardian_phone: payload.guardianPhone ?? null,
+        form_data: payload.formData ?? {},
+      })
+      .select()
+      .single();
+
+    if (insertError) throw insertError;
+    return data;
+  }
 }
 
 export async function deleteConsent(consentId: string) {
-  await apiJson(`/api/consents/${consentId}`, {
-    method: 'DELETE',
-  });
+  try {
+    await apiJson(`/api/consents/${consentId}`, {
+      method: 'DELETE',
+    });
+  } catch (error) {
+    if (!shouldFallbackToDirectDb(error)) {
+      throw error;
+    }
+
+    const { data: authData } = await supabase.auth.getUser();
+    const practitionerId = authData.user?.id;
+    if (!practitionerId) {
+      throw error;
+    }
+
+    const { error: deleteError } = await supabase
+      .from('consent_forms')
+      .delete()
+      .eq('id', consentId)
+      .eq('practitioner_id', practitionerId);
+    if (deleteError) throw deleteError;
+  }
 }
 
 export async function listConsents(athleteId?: string, preferAthleteToken = false) {
   const qs = athleteId ? `?athleteId=${encodeURIComponent(athleteId)}` : '';
-  return apiJson(`/api/consents${qs}`, {
-    preferAthleteToken,
-  });
+  try {
+    return await apiJson(`/api/consents${qs}`, {
+      preferAthleteToken,
+    });
+  } catch (error) {
+    if (!shouldFallbackToDirectDb(error)) {
+      throw error;
+    }
+
+    const { data: authData } = await supabase.auth.getUser();
+    const practitionerId = authData.user?.id;
+    if (!practitionerId) {
+      throw error;
+    }
+
+    let query = supabase
+      .from('consent_forms')
+      .select('*')
+      .eq('practitioner_id', practitionerId)
+      .order('created_at', { ascending: false });
+    if (athleteId) {
+      query = query.eq('athlete_id', athleteId);
+    }
+
+    const { data, error: listError } = await query;
+    if (listError) throw listError;
+    return data ?? [];
+  }
 }

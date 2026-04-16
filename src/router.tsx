@@ -24,7 +24,6 @@ const ConsentFormsPage = React.lazy(() => import('@/pages/consent/ConsentFormsPa
 const InjuryPsychologyPage = React.lazy(() => import('@/pages/injury/InjuryPsychologyPage'))
 const MentalPerformanceLabPage = React.lazy(() => import('@/pages/lab/MentalPerformanceLabPage'))
 const ProgramBuilderPage = React.lazy(() => import('@/pages/programs/ProgramBuilderPage'))
-const ConversationsPage = React.lazy(() => import('@/pages/conversations/ConversationsPage'))
 const SessionsPage = React.lazy(() => import('@/pages/sessions/SessionsPage'))
 const CheckInsPage = React.lazy(() => import('@/pages/checkins/CheckInsPage'))
 const AssessmentsPage = React.lazy(() => import('@/pages/assessments/AssessmentsPage'))
@@ -208,7 +207,7 @@ const router = createBrowserRouter([
       { path: '/ai-assistant', element: routeElement(<AIAssistantPage />, 'Loading AI assistant...') },
       { path: '/reports', element: routeElement(<ReportsPage />, 'Loading reports...') },
       { path: '/settings', element: routeElement(<SettingsPage />, 'Loading settings...') },
-      { path: '/conversations', element: routeElement(<ConversationsPage />, 'Loading conversations...') },
+      { path: '/conversations', element: <Navigate to="/chat" replace /> },
     ],
   },
   {
