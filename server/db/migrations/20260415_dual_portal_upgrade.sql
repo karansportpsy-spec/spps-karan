@@ -86,8 +86,131 @@ create table if not exists messages (
   created_at timestamptz not null default now()
 );
 
-create index if not exists idx_messages_conversation on messages(conversation_key, created_at desc);
-create index if not exists idx_messages_receiver_unread on messages(receiver_id, is_read, created_at desc);
+-- Production compatibility:
+-- Some live environments already have an older messages schema using:
+--   conversation_id + content
+-- This migration normalizes that shape without dropping data.
+alter table if exists messages
+  add column if not exists conversation_key text,
+  add column if not exists receiver_id uuid references auth.users(id) on delete cascade,
+  add column if not exists receiver_role text,
+  add column if not exists body text,
+  add column if not exists read_at timestamptz;
+
+do $$
+begin
+  -- Backfill body from legacy content column (if present)
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'messages'
+      and column_name = 'content'
+  ) then
+    execute $sql$
+      update messages
+         set body = coalesce(body, content)
+       where body is null
+         and content is not null
+    $sql$;
+  end if;
+
+  -- Backfill conversation_key from conversation_id + participants where possible
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'messages'
+      and column_name = 'conversation_id'
+  ) then
+    execute $sql$
+      update messages m
+         set conversation_key =
+               case
+                 when a.portal_user_id is not null then
+                   least(
+                     'practitioner:' || c.practitioner_id::text,
+                     'athlete:' || a.portal_user_id::text
+                   )
+                   || '|'
+                   || greatest(
+                     'practitioner:' || c.practitioner_id::text,
+                     'athlete:' || a.portal_user_id::text
+                   )
+                 else m.conversation_id::text
+               end
+        from conversations c
+        left join athletes a on a.id = c.athlete_id
+       where m.conversation_id = c.id
+         and (m.conversation_key is null or m.conversation_key = '')
+    $sql$;
+
+    -- Fallback: still populate with conversation_id text when participant join is unavailable.
+    execute $sql$
+      update messages
+         set conversation_key = conversation_id::text
+       where (conversation_key is null or conversation_key = '')
+         and conversation_id is not null
+    $sql$;
+
+    -- Backfill receiver columns from legacy conversations linkage when missing.
+    execute $sql$
+      update messages m
+         set receiver_id =
+               case
+                 when m.sender_role = 'practitioner' then a.portal_user_id
+                 when m.sender_role = 'athlete' then c.practitioner_id
+                 when m.sender_role = 'ai_bot' then a.portal_user_id
+                 else m.receiver_id
+               end,
+             receiver_role =
+               case
+                 when m.sender_role = 'practitioner' then 'athlete'
+                 when m.sender_role = 'athlete' then 'practitioner'
+                 when m.sender_role = 'ai_bot' then 'athlete'
+                 else m.receiver_role
+               end
+        from conversations c
+        left join athletes a on a.id = c.athlete_id
+       where m.conversation_id = c.id
+         and (m.receiver_id is null or m.receiver_role is null)
+    $sql$;
+  end if;
+end $$;
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'messages'
+      and column_name = 'conversation_key'
+  ) then
+    execute 'create index if not exists idx_messages_conversation on messages(conversation_key, created_at desc)';
+  elsif exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'messages'
+      and column_name = 'conversation_id'
+  ) then
+    execute 'create index if not exists idx_messages_conversation on messages(conversation_id, created_at desc)';
+  end if;
+end $$;
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'messages'
+      and column_name = 'receiver_id'
+  ) then
+    execute 'create index if not exists idx_messages_receiver_unread on messages(receiver_id, is_read, created_at desc)';
+  end if;
+end $$;
 
 -- ---------- Injury psychology reflection logs ----------
 create table if not exists injury_psychology_logs (
