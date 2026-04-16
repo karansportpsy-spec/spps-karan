@@ -52,6 +52,9 @@ export function registerAthleteRoutes(app) {
 
         const athlete = updateRes.rows[0];
         let activationEmailSent = false;
+        let activationEmailStatus = payload.sendActivationEmail ? 'failed' : 'not_requested';
+        let activationEmailMethod = null;
+        let activationEmailDetail = null;
         const baseUrl = String(req.headers.origin || env.clientOrigin || '').replace(/\/+$/, '');
         const portalLoginUrl = `${baseUrl}/athlete/login`;
         let portalInviteUrl = null;
@@ -75,12 +78,16 @@ export function registerAthleteRoutes(app) {
 
         if (payload.isPortalActivated && payload.sendActivationEmail && athlete.email) {
           try {
-            activationEmailSent = await sendActivationEmail({
+            const emailResult = await sendActivationEmail({
               to: athlete.email,
               athleteName: `${athlete.first_name} ${athlete.last_name}`,
               portalLoginUrl,
               inviteUrl: portalInviteUrl,
             });
+            activationEmailSent = Boolean(emailResult?.sent);
+            activationEmailStatus = emailResult?.status || 'failed';
+            activationEmailMethod = emailResult?.method || null;
+            activationEmailDetail = emailResult?.detail || null;
 
             if (activationEmailSent) {
               await pool.query(
@@ -92,7 +99,14 @@ export function registerAthleteRoutes(app) {
             }
           } catch (mailErr) {
             console.error('[SPPS API] activation email send failed:', mailErr);
+            activationEmailStatus = 'failed';
+            activationEmailMethod = null;
+            activationEmailDetail = mailErr?.message || 'Activation email send failed.';
           }
+        } else if (payload.isPortalActivated && payload.sendActivationEmail && !athlete.email) {
+          activationEmailStatus = 'failed';
+          activationEmailMethod = null;
+          activationEmailDetail = 'Athlete email is missing.';
         }
 
         res.json({
@@ -101,6 +115,9 @@ export function registerAthleteRoutes(app) {
             : 'Athlete portal deactivated.',
           athlete,
           activationEmailSent,
+          activationEmailStatus,
+          activationEmailMethod,
+          activationEmailDetail,
           portalLoginUrl: payload.isPortalActivated ? portalLoginUrl : null,
           portalInviteUrl: payload.isPortalActivated ? portalInviteUrl : null,
         });

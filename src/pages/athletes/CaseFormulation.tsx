@@ -1225,7 +1225,11 @@ export default function CaseFormulationPage() {
           response.portalLoginUrl ||
           `${window.location.origin.replace(/\/+$/, '')}/athlete/login`
 
-        if (!response.activationEmailSent && shareableLink) {
+        const activationEmailStatus =
+          response.activationEmailStatus ||
+          (response.activationEmailSent ? 'sent' : 'failed')
+
+        if (activationEmailStatus !== 'sent' && shareableLink) {
           try {
             await navigator.clipboard.writeText(shareableLink)
           } catch {
@@ -1233,9 +1237,14 @@ export default function CaseFormulationPage() {
           }
         }
 
-        const activationMessage = response.activationEmailSent
-          ? `Portal activated and activation email sent to ${athlete.email || 'athlete email'}.`
-          : 'Portal activated, but email could not be sent automatically. Share the link below with the athlete manually.'
+        const activationMessage =
+          activationEmailStatus === 'sent'
+            ? `Portal activated and activation email was sent to ${athlete.email || 'athlete email'}.`
+            : activationEmailStatus === 'queued'
+              ? `Portal activated. Email request was queued (${response.activationEmailMethod || 'provider'}), but inbox delivery is not confirmed yet. Ask the athlete to check Inbox/Spam, and share the link below now.`
+              : activationEmailStatus === 'disabled'
+                ? 'Portal activated. Email notifications are disabled on this deployment. Share the link below with the athlete manually.'
+                : 'Portal activated, but email could not be sent automatically. Share the link below with the athlete manually.'
 
         alert(`${activationMessage}\n\nAthlete portal link:\n${shareableLink}`)
       } else {

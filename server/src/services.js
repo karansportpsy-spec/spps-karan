@@ -50,7 +50,14 @@ export async function createAthletePortalInvite({ practitionerId, athleteId, ema
 }
 
 export async function sendActivationEmail({ to, athleteName, portalLoginUrl, inviteUrl }) {
-  if (!env.enableActivationEmail) return false;
+  if (!env.enableActivationEmail) {
+    return {
+      sent: false,
+      status: 'disabled',
+      method: null,
+      detail: 'Activation email notifications are disabled by configuration.',
+    };
+  }
   const transporter = getSmtpTransporter();
 
   const loginUrl = portalLoginUrl || `${sanitizeBaseUrl(env.clientOrigin)}/athlete/login`;
@@ -59,7 +66,7 @@ export async function sendActivationEmail({ to, athleteName, portalLoginUrl, inv
     : '';
 
   if (transporter) {
-    await transporter.sendMail({
+    const info = await transporter.sendMail({
       from: env.smtpFrom,
       to,
       subject: 'Your SPPS athlete portal is activated',
@@ -71,7 +78,12 @@ export async function sendActivationEmail({ to, athleteName, portalLoginUrl, inv
         `Athlete Portal Login:\n${loginUrl}\n\n` +
         'Regards,\nSPPS Team',
     });
-    return true;
+    return {
+      sent: true,
+      status: 'sent',
+      method: 'smtp',
+      detail: info?.messageId || null,
+    };
   }
 
   // SMTP not configured: fallback to Supabase Auth transactional email flow.
@@ -79,7 +91,12 @@ export async function sendActivationEmail({ to, athleteName, portalLoginUrl, inv
     redirectTo: inviteUrl || loginUrl,
   });
   if (!resetResult.error) {
-    return true;
+    return {
+      sent: false,
+      status: 'queued',
+      method: 'supabase_reset',
+      detail: 'Password-reset email request accepted by Supabase.',
+    };
   }
 
   const inviteResult = await supabaseAdmin.auth.admin.inviteUserByEmail(to, {
@@ -90,10 +107,25 @@ export async function sendActivationEmail({ to, athleteName, portalLoginUrl, inv
     },
   });
   if (!inviteResult.error) {
-    return true;
+    return {
+      sent: false,
+      status: 'queued',
+      method: 'supabase_invite',
+      detail: 'Invite email request accepted by Supabase.',
+    };
   }
 
-  return false;
+  const errorDetail =
+    inviteResult.error?.message ||
+    resetResult.error?.message ||
+    'Supabase rejected activation email request.';
+
+  return {
+    sent: false,
+    status: 'failed',
+    method: 'supabase',
+    detail: errorDetail,
+  };
 }
 
 export async function getAthleteByPortalUserId(userId) {

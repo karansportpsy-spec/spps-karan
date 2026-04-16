@@ -2,6 +2,8 @@ import { apiFetch, apiJson } from '@/lib/apiClient';
 import { shouldFallbackToDirectDb } from '@/lib/apiFallback';
 import { supabase } from '@/lib/supabase';
 
+type ActivationEmailStatus = 'sent' | 'queued' | 'failed' | 'disabled' | 'not_requested';
+
 export async function downloadAthletesCsv(ids?: string[]) {
   const params = new URLSearchParams();
   if (ids && ids.length > 0) {
@@ -54,6 +56,9 @@ export async function setAthletePortalActivation(
       message: string;
       athlete: any;
       activationEmailSent: boolean;
+      activationEmailStatus?: ActivationEmailStatus;
+      activationEmailMethod?: string | null;
+      activationEmailDetail?: string | null;
       portalLoginUrl?: string | null;
       portalInviteUrl?: string | null;
     }>(
@@ -79,6 +84,9 @@ export async function setAthletePortalActivation(
     const portalLoginUrl = `${baseUrl}/athlete/login`;
     let portalInviteUrl: string | null = null;
     let activationEmailSent = false;
+    let activationEmailStatus: ActivationEmailStatus = sendActivationEmail ? 'failed' : 'not_requested';
+    let activationEmailMethod: string | null = null;
+    let activationEmailDetail: string | null = null;
     const updatePayload: Record<string, unknown> = {
       is_portal_activated: isPortalActivated,
       portal_activated_at: isPortalActivated ? nowIso : null,
@@ -121,7 +129,9 @@ export async function setAthletePortalActivation(
           redirectTo: portalInviteUrl || portalLoginUrl,
         });
         if (!resetErr) {
-          activationEmailSent = true;
+          activationEmailStatus = 'queued';
+          activationEmailMethod = 'supabase_reset';
+          activationEmailDetail = 'Email request accepted by Supabase. Delivery may take a few minutes.';
         } else {
           const { error: otpErr } = await supabase.auth.signInWithOtp({
             email: data.email,
@@ -133,7 +143,15 @@ export async function setAthletePortalActivation(
               },
             },
           });
-          activationEmailSent = !otpErr;
+          if (!otpErr) {
+            activationEmailStatus = 'queued';
+            activationEmailMethod = 'supabase_otp';
+            activationEmailDetail = 'One-time sign-in email request accepted by Supabase.';
+          } else {
+            activationEmailStatus = 'failed';
+            activationEmailMethod = 'supabase';
+            activationEmailDetail = otpErr.message || resetErr.message || 'Unable to queue activation email.';
+          }
         }
       }
     }
@@ -142,6 +160,9 @@ export async function setAthletePortalActivation(
       message: isPortalActivated ? 'Athlete portal activated.' : 'Athlete portal deactivated.',
       athlete: data,
       activationEmailSent,
+      activationEmailStatus,
+      activationEmailMethod,
+      activationEmailDetail,
       portalLoginUrl: isPortalActivated ? portalLoginUrl : null,
       portalInviteUrl: isPortalActivated ? portalInviteUrl : null,
     };
