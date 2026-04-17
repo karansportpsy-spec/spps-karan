@@ -1,12 +1,23 @@
 // src/components/EnableAthletePortal.tsx
-// Practitioner-side component to enable athlete portal access
-// Creates an invite + automatically sends a branded email to the athlete.
+//
+// Practitioner-side: authorize an athlete's email for portal signup.
+//
+// Flow:
+//   1. Practitioner types the athlete's email here and clicks "Authorize".
+//   2. A row is inserted into public.athlete_authorized_emails.
+//   3. The practitioner tells the athlete (in session, verbally):
+//        "Go to <site>/athlete/login, click Sign up, use <email>, set a password."
+//   4. When the athlete signs up, a DB trigger creates their portal profile
+//      and marks the whitelist entry as claimed. Attempts to sign up with
+//      any other email will be rejected at the database level.
+//
+// No email is sent. No links are generated. No background services required.
 
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Mail, CheckCircle, Clock, AlertCircle, Copy, ExternalLink,
-  Smartphone, Send, RefreshCw,
+  CheckCircle, AlertCircle, Smartphone, Copy, ShieldCheck,
+  Trash2, UserCheck, Info,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -17,51 +28,12 @@ interface EnableAthletePortalProps {
   athleteEmail?:    string
 }
 
-type InviteRow = {
-  id:            string
-  token:         string
-  email:         string
-  expires_at:    string
-  accepted_at:   string | null
-  email_sent_at: string | null
-  email_last_error: string | null
+type AuthorizedEmail = {
+  id:         string
+  email:      string
+  claimed_at: string | null
+  created_at: string
 }
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────────────────────────────────────────
-
-function buildAcceptUrl(token: string, email: string): string {
-  // NOTE: singular `/athlete/` to match router.tsx
-  return `${window.location.origin}/athlete/accept-invite?token=${token}&email=${encodeURIComponent(email)}`
-}
-
-async function invokeSendEmail(inviteId: string): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const { data, error } = await supabase.functions.invoke('send-athlete-invite', {
-      body: { invite_id: inviteId },
-    })
-    if (error) {
-      // supabase-js swallows the JSON body in `error.context.responseText`
-      let detail = error.message
-      try {
-        const body = (error as any).context?.responseText
-          ? JSON.parse((error as any).context.responseText)
-          : null
-        if (body?.error) detail = body.error
-      } catch { /* ignore */ }
-      return { ok: false, error: detail }
-    }
-    if (data?.ok) return { ok: true }
-    return { ok: false, error: data?.error ?? 'Unknown error from email service' }
-  } catch (e) {
-    return { ok: false, error: (e as Error).message }
-  }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Component
-// ──────────────────────────────────────────────────────────────────────────────
 
 export default function EnableAthletePortal({
   athleteId,
@@ -71,11 +43,12 @@ export default function EnableAthletePortal({
   const { user } = useAuth()
   const qc       = useQueryClient()
 
-  const [email,     setEmail]     = useState(athleteEmail ?? '')
-  const [copied,    setCopied]    = useState(false)
-  const [lastError, setLastError] = useState<string | null>(null)
+  const [email,  setEmail]  = useState(athleteEmail ?? '')
+  const [copied, setCopied] = useState(false)
 
-  // ── Is portal already enabled? ──────────────────────────────────────────
+  const loginUrl = `${window.location.origin}/athlete/login`
+
+  // ── Is the portal already activated for this athlete? ───────────────────
   const { data: portalStatus } = useQuery({
     queryKey: ['athlete_portal_status', athleteId],
     enabled:  !!athleteId,
@@ -89,100 +62,83 @@ export default function EnableAthletePortal({
     },
   })
 
-  // ── Pending invite? ─────────────────────────────────────────────────────
-  const { data: pendingInvite } = useQuery<InviteRow | null>({
-    queryKey: ['athlete_invite', athleteId],
+  // ── Is there already a pending (unclaimed) authorization? ───────────────
+  const { data: pending } = useQuery<AuthorizedEmail | null>({
+    queryKey: ['athlete_authorized_email', athleteId],
     enabled:  !!athleteId && !portalStatus?.portal_enabled,
     queryFn: async () => {
       const { data } = await supabase
-        .from('athlete_invites')
-        .select('id, token, email, expires_at, accepted_at, email_sent_at, email_last_error')
+        .from('athlete_authorized_emails')
+        .select('id, email, claimed_at, created_at')
         .eq('athlete_id', athleteId)
-        .is('accepted_at', null)
-        .gt('expires_at', new Date().toISOString())
-        .order('created_at', { ascending: false })
-        .limit(1)
+        .is('claimed_at', null)
         .maybeSingle()
-      return data as InviteRow | null
+      return data as AuthorizedEmail | null
     },
   })
 
-  // ── Create invite + send email ──────────────────────────────────────────
-  const enablePortal = useMutation({
+  // ── Authorize the email ─────────────────────────────────────────────────
+  const authorize = useMutation({
     mutationFn: async () => {
-      if (!email.trim())  throw new Error('Email is required')
-      if (!user?.id)      throw new Error('You must be signed in')
+      const trimmed = email.trim().toLowerCase()
+      if (!trimmed)              throw new Error('Please enter an email address.')
+      if (!/^\S+@\S+\.\S+$/.test(trimmed)) throw new Error('Please enter a valid email address.')
+      if (!user?.id)             throw new Error('You must be signed in.')
 
-      setLastError(null)
-
-      // 1. Create the invite row. The token is generated server-side.
-      const { data: invite, error: inviteErr } = await supabase
-        .from('athlete_invites')
+      const { data, error } = await supabase
+        .from('athlete_authorized_emails')
         .insert({
           practitioner_id: user.id,
           athlete_id:      athleteId,
-          email:           email.trim().toLowerCase(),
+          email:           trimmed,
         })
-        .select('id, token, email, expires_at, accepted_at, email_sent_at, email_last_error')
+        .select('id, email, claimed_at, created_at')
         .single()
 
-      if (inviteErr) throw new Error(`Could not create invite: ${inviteErr.message}`)
-
-      // 2. Pre-seed the conversation so the practitioner can DM immediately
-      await supabase
-        .from('conversations')
-        .upsert(
-          {
-            practitioner_id:       user.id,
-            athlete_id:            athleteId,
-            status:                'active',
-            practitioner_unread:   0,
-            athlete_unread:        0,
-          },
-          { onConflict: 'practitioner_id,athlete_id' }
-        )
-        .then(() => {})
-        // Don't fail the whole flow on a secondary upsert
-        // @ts-ignore - `.then` on supabase builder returns PromiseLike
-        .catch?.(() => {})
-
-      // 3. Ask the edge function to email the athlete
-      const send = await invokeSendEmail(invite.id)
-
-      return { invite: invite as InviteRow, send }
-    },
-    onSuccess: ({ send }) => {
-      if (!send.ok) setLastError(send.error ?? 'Email could not be sent')
-      qc.invalidateQueries({ queryKey: ['athlete_portal_status', athleteId] })
-      qc.invalidateQueries({ queryKey: ['athlete_invite',        athleteId] })
-    },
-    onError: (e: Error) => {
-      setLastError(e.message)
-    },
-  })
-
-  // ── Resend email for an existing pending invite ─────────────────────────
-  const resendEmail = useMutation({
-    mutationFn: async (inviteId: string) => {
-      setLastError(null)
-      const res = await invokeSendEmail(inviteId)
-      if (!res.ok) throw new Error(res.error ?? 'Email could not be sent')
-      return res
+      if (error) {
+        // Friendly messages for common failures
+        if (error.code === '23505') {
+          if (error.message.includes('athlete_id')) {
+            throw new Error('This athlete already has a pending or claimed email authorization.')
+          }
+          if (error.message.toLowerCase().includes('email')) {
+            throw new Error('This email is already authorized for another athlete. Use a different email.')
+          }
+          throw new Error('This authorization already exists.')
+        }
+        throw error
+      }
+      return data as AuthorizedEmail
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['athlete_invite', athleteId] })
+      qc.invalidateQueries({ queryKey: ['athlete_authorized_email', athleteId] })
+      qc.invalidateQueries({ queryKey: ['athlete_portal_status',    athleteId] })
     },
-    onError: (e: Error) => setLastError(e.message),
   })
 
-  async function copyLink(link: string) {
-    await navigator.clipboard.writeText(link)
+  // ── Revoke the pending authorization ────────────────────────────────────
+  const revoke = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('athlete_authorized_emails')
+        .delete()
+        .eq('id', id)
+        .is('claimed_at', null) // extra safety — never delete claimed rows
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['athlete_authorized_email', athleteId] })
+    },
+  })
+
+  async function copyLoginUrl() {
+    await navigator.clipboard.writeText(loginUrl)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // RENDER: Already enabled
+  // 1. Portal already active — the athlete has signed up
   // ════════════════════════════════════════════════════════════════════════
   if (portalStatus?.portal_enabled) {
     return (
@@ -207,123 +163,82 @@ export default function EnableAthletePortal({
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // RENDER: Pending invite (either freshly created this session OR existing)
+  // 2. Email authorized, athlete hasn't signed up yet
   // ════════════════════════════════════════════════════════════════════════
-  const activeInvite = enablePortal.data?.invite ?? pendingInvite ?? null
-  const activeSend   = enablePortal.data?.send   ?? null
-
-  if (activeInvite) {
-    const link       = buildAcceptUrl(activeInvite.token, activeInvite.email)
-    const expiresAt  = new Date(activeInvite.expires_at)
-    const hoursLeft  = Math.max(0, Math.ceil((expiresAt.getTime() - Date.now()) / 3_600_000))
-
-    // Email state: sent, failed, or sending
-    const emailSent  = Boolean(activeInvite.email_sent_at) || activeSend?.ok === true
-    const emailErr   = lastError ?? activeInvite.email_last_error ?? (activeSend?.ok === false ? activeSend.error : null)
-
+  if (pending) {
     return (
-      <div className={`rounded-2xl p-4 space-y-3 border ${
-        emailSent ? 'bg-blue-50 border-blue-200' : emailErr ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'
-      }`}>
-        {/* Status header */}
+      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-3">
         <div className="flex items-start gap-3">
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-            emailSent ? 'bg-blue-100' : emailErr ? 'bg-amber-100' : 'bg-blue-100'
-          }`}>
-            {emailSent
-              ? <Mail size={18} className="text-blue-600" />
-              : emailErr
-                ? <AlertCircle size={18} className="text-amber-600" />
-                : <Clock size={18} className="text-blue-600" />}
+          <div className="w-9 h-9 bg-blue-100 rounded-xl flex items-center justify-center shrink-0">
+            <UserCheck size={18} className="text-blue-600" />
           </div>
           <div className="flex-1">
-            <p className={`font-semibold text-sm ${
-              emailSent ? 'text-blue-800' : emailErr ? 'text-amber-800' : 'text-blue-800'
-            }`}>
-              {emailSent ? 'Invite email sent' : emailErr ? 'Invite created — email failed' : 'Invite created'}
-            </p>
-            <p className={`text-xs mt-0.5 ${
-              emailSent ? 'text-blue-600' : emailErr ? 'text-amber-700' : 'text-blue-600'
-            }`}>
-              To <span className="font-medium">{activeInvite.email}</span> · expires in {hoursLeft}h
-            </p>
+            <p className="font-semibold text-blue-800 text-sm">Email Authorized — Waiting for Signup</p>
+            <p className="text-xs text-blue-600 mt-0.5 break-all">{pending.email}</p>
           </div>
         </div>
 
-        {/* Error banner */}
-        {emailErr && (
-          <div className="flex items-start gap-2 text-xs text-amber-800 bg-white border border-amber-200 rounded-lg px-3 py-2">
-            <AlertCircle size={13} className="mt-0.5 shrink-0" />
-            <div>
-              <p className="font-medium">Email provider error</p>
-              <p className="text-amber-700 mt-0.5 break-words">{emailErr}</p>
-              <p className="text-amber-600 mt-1">You can share the link below manually as a fallback.</p>
-            </div>
-          </div>
-        )}
-
-        {/* Shareable fallback link */}
-        <div className="bg-white border border-gray-200 rounded-xl p-3">
-          <p className="text-xs font-semibold text-gray-500 mb-1">
-            Fallback link (also in the email):
+        <div className="bg-white border border-blue-200 rounded-xl p-3 text-xs text-gray-700 space-y-2">
+          <p className="font-semibold text-gray-800 flex items-center gap-1">
+            <Info size={12} className="text-blue-500" />
+            Tell {athleteFirstName} (in session):
           </p>
-          <p className="text-xs text-gray-600 break-all font-mono">{link}</p>
+          <ol className="list-decimal ml-4 space-y-1 text-gray-600">
+            <li>Open <span className="font-mono text-blue-700 break-all">{loginUrl}</span></li>
+            <li>Click <strong>"Sign up"</strong></li>
+            <li>Use the email above and set a password</li>
+            <li>That's it — they'll be taken to their dashboard</li>
+          </ol>
         </div>
 
-        {/* Actions */}
         <div className="flex gap-2">
           <button
-            onClick={() => resendEmail.mutate(activeInvite.id)}
-            disabled={resendEmail.isPending}
-            className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-medium transition-all bg-[#0D7C8E] hover:bg-[#0a6a7a] disabled:opacity-50 text-white"
+            onClick={copyLoginUrl}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-medium transition-all ${
+              copied
+                ? 'bg-green-100 text-green-700'
+                : 'bg-white border border-blue-200 text-blue-700 hover:bg-blue-50'
+            }`}
           >
-            {resendEmail.isPending
-              ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Sending…</>
-              : emailSent
-                ? <><RefreshCw size={14} /> Resend email</>
-                : <><Send size={14} /> Send email</>
-            }
+            {copied ? <><CheckCircle size={14} /> Copied!</> : <><Copy size={14} /> Copy login URL</>}
           </button>
 
           <button
-            onClick={() => copyLink(link)}
-            className={`px-3 py-2 border rounded-xl text-sm font-medium transition-all ${
-              copied
-                ? 'bg-green-100 border-green-200 text-green-700'
-                : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
-            }`}
-            title="Copy link"
+            onClick={() => {
+              if (confirm(`Revoke authorization for ${pending.email}?`)) {
+                revoke.mutate(pending.id)
+              }
+            }}
+            disabled={revoke.isPending}
+            className="px-3 py-2 bg-white border border-red-200 rounded-xl text-red-600 hover:bg-red-50 disabled:opacity-50"
+            title="Revoke authorization"
           >
-            {copied ? <CheckCircle size={14} /> : <Copy size={14} />}
+            <Trash2 size={14} />
           </button>
-
-          <a href={link} target="_blank" rel="noopener noreferrer"
-             className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-gray-700 hover:bg-gray-50"
-             title="Preview invite page">
-            <ExternalLink size={14} />
-          </a>
         </div>
 
-        <p className="text-xs text-gray-500 text-center">
-          {athleteFirstName} opens the link → sets a password → enters portal
-        </p>
+        {revoke.isError && (
+          <div className="flex items-center gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            <AlertCircle size={13} /> {(revoke.error as Error).message}
+          </div>
+        )}
       </div>
     )
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // RENDER: Not yet enabled (default state)
+  // 3. Default: authorize a new email
   // ════════════════════════════════════════════════════════════════════════
   return (
     <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-3">
       <div className="flex items-start gap-3">
         <div className="w-9 h-9 bg-[#1A2D4A]/10 rounded-xl flex items-center justify-center shrink-0">
-          <Smartphone size={18} className="text-[#1A2D4A]" />
+          <ShieldCheck size={18} className="text-[#1A2D4A]" />
         </div>
         <div>
-          <p className="font-semibold text-gray-700 text-sm">Enable Athlete Portal</p>
+          <p className="font-semibold text-gray-700 text-sm">Authorize Athlete Portal</p>
           <p className="text-xs text-gray-500 mt-0.5">
-            {athleteFirstName} will receive an email with a link to set their password.
+            Enter {athleteFirstName}'s email. They'll sign up themselves and choose their own password.
           </p>
         </div>
       </div>
@@ -342,26 +257,26 @@ export default function EnableAthletePortal({
         />
       </div>
 
-      {(enablePortal.isError || lastError) && (
+      {authorize.isError && (
         <div className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
           <AlertCircle size={13} className="mt-0.5 shrink-0" />
-          <span>{lastError ?? (enablePortal.error as Error)?.message}</span>
+          <span>{(authorize.error as Error).message}</span>
         </div>
       )}
 
       <button
-        onClick={() => enablePortal.mutate()}
-        disabled={!email.trim() || enablePortal.isPending}
+        onClick={() => authorize.mutate()}
+        disabled={!email.trim() || authorize.isPending}
         className="w-full flex items-center justify-center gap-2 py-2.5 bg-[#0D7C8E] hover:bg-[#0a6a7a] disabled:opacity-50 text-white text-sm font-semibold rounded-xl transition-colors"
       >
-        {enablePortal.isPending
-          ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Creating invite &amp; sending email…</>
-          : <><Mail size={15} /> Send invitation to {athleteFirstName}</>
+        {authorize.isPending
+          ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Authorizing…</>
+          : <><ShieldCheck size={15} /> Authorize email</>
         }
       </button>
 
       <p className="text-xs text-gray-400 text-center">
-        Invites expire after 48 hours
+        No email is sent. Tell {athleteFirstName} verbally that their email is authorized.
       </p>
     </div>
   )
