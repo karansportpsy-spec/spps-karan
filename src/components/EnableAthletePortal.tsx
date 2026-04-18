@@ -1,23 +1,21 @@
 // src/components/EnableAthletePortal.tsx
 //
 // Practitioner-side: authorize an athlete's email for portal signup.
+// No email is sent. The practitioner tells the athlete verbally in session.
 //
 // Flow:
-//   1. Practitioner types the athlete's email here and clicks "Authorize".
-//   2. A row is inserted into public.athlete_authorized_emails.
-//   3. The practitioner tells the athlete (in session, verbally):
-//        "Go to <site>/athlete/login, click Sign up, use <email>, set a password."
-//   4. When the athlete signs up, a DB trigger creates their portal profile
-//      and marks the whitelist entry as claimed. Attempts to sign up with
-//      any other email will be rejected at the database level.
-//
-// No email is sent. No links are generated. No background services required.
+//   1. Practitioner enters athlete email here → click "Authorize"
+//   2. Row inserted into public.athlete_authorized_emails
+//   3. In-session, the practitioner says: "Go to <site>/athlete/login,
+//      click Sign Up, use <email>, set a password."
+//   4. Athlete signs up — DB trigger creates athlete_profiles + conversation,
+//      marks the whitelist entry as claimed.
 
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  CheckCircle, AlertCircle, Smartphone, Copy, ShieldCheck,
-  Trash2, UserCheck, Info,
+  CheckCircle, AlertCircle, Smartphone, Copy,
+  ShieldCheck, Trash2, UserCheck, Info,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -48,7 +46,7 @@ export default function EnableAthletePortal({
 
   const loginUrl = `${window.location.origin}/athlete/login`
 
-  // ── Is the portal already activated for this athlete? ───────────────────
+  // Is the portal already activated?
   const { data: portalStatus } = useQuery({
     queryKey: ['athlete_portal_status', athleteId],
     enabled:  !!athleteId,
@@ -62,7 +60,7 @@ export default function EnableAthletePortal({
     },
   })
 
-  // ── Is there already a pending (unclaimed) authorization? ───────────────
+  // Pending (unclaimed) authorization?
   const { data: pending } = useQuery<AuthorizedEmail | null>({
     queryKey: ['athlete_authorized_email', athleteId],
     enabled:  !!athleteId && !portalStatus?.portal_enabled,
@@ -77,13 +75,12 @@ export default function EnableAthletePortal({
     },
   })
 
-  // ── Authorize the email ─────────────────────────────────────────────────
   const authorize = useMutation({
     mutationFn: async () => {
       const trimmed = email.trim().toLowerCase()
-      if (!trimmed)              throw new Error('Please enter an email address.')
-      if (!/^\S+@\S+\.\S+$/.test(trimmed)) throw new Error('Please enter a valid email address.')
-      if (!user?.id)             throw new Error('You must be signed in.')
+      if (!trimmed)                              throw new Error('Please enter an email address.')
+      if (!/^\S+@\S+\.\S+$/.test(trimmed))       throw new Error('Please enter a valid email address.')
+      if (!user?.id)                             throw new Error('You must be signed in.')
 
       const { data, error } = await supabase
         .from('athlete_authorized_emails')
@@ -96,13 +93,12 @@ export default function EnableAthletePortal({
         .single()
 
       if (error) {
-        // Friendly messages for common failures
         if (error.code === '23505') {
           if (error.message.includes('athlete_id')) {
-            throw new Error('This athlete already has a pending or claimed email authorization.')
+            throw new Error('This athlete already has a pending or claimed authorization.')
           }
           if (error.message.toLowerCase().includes('email')) {
-            throw new Error('This email is already authorized for another athlete. Use a different email.')
+            throw new Error('This email is already authorized for another athlete.')
           }
           throw new Error('This authorization already exists.')
         }
@@ -116,14 +112,13 @@ export default function EnableAthletePortal({
     },
   })
 
-  // ── Revoke the pending authorization ────────────────────────────────────
   const revoke = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase
         .from('athlete_authorized_emails')
         .delete()
         .eq('id', id)
-        .is('claimed_at', null) // extra safety — never delete claimed rows
+        .is('claimed_at', null)
       if (error) throw error
     },
     onSuccess: () => {
@@ -137,9 +132,7 @@ export default function EnableAthletePortal({
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // ════════════════════════════════════════════════════════════════════════
-  // 1. Portal already active — the athlete has signed up
-  // ════════════════════════════════════════════════════════════════════════
+  // ── Already activated ─────────────────────────────────────────────────
   if (portalStatus?.portal_enabled) {
     return (
       <div className="bg-green-50 border border-green-200 rounded-2xl p-4">
@@ -162,9 +155,7 @@ export default function EnableAthletePortal({
     )
   }
 
-  // ════════════════════════════════════════════════════════════════════════
-  // 2. Email authorized, athlete hasn't signed up yet
-  // ════════════════════════════════════════════════════════════════════════
+  // ── Authorized, awaiting signup ────────────────────────────────────────
   if (pending) {
     return (
       <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 space-y-3">
@@ -185,7 +176,7 @@ export default function EnableAthletePortal({
           </p>
           <ol className="list-decimal ml-4 space-y-1 text-gray-600">
             <li>Open <span className="font-mono text-blue-700 break-all">{loginUrl}</span></li>
-            <li>Click <strong>"Sign up"</strong></li>
+            <li>Click <strong>"Sign Up"</strong></li>
             <li>Use the email above and set a password</li>
             <li>That's it — they'll be taken to their dashboard</li>
           </ol>
@@ -226,9 +217,7 @@ export default function EnableAthletePortal({
     )
   }
 
-  // ════════════════════════════════════════════════════════════════════════
-  // 3. Default: authorize a new email
-  // ════════════════════════════════════════════════════════════════════════
+  // ── Default: authorize a new email ─────────────────────────────────────
   return (
     <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-3">
       <div className="flex items-start gap-3">
