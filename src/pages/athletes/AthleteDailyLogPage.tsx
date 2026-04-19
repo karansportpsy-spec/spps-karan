@@ -106,20 +106,27 @@ export default function AthleteDailyLogPage() {
       }
       await supabase.from('athlete_daily_logs').upsert(payload, { onConflict: 'athlete_id,log_date' })
 
-      // Also submit a check-in for backward compatibility with practitioner dashboards
-      await supabase.from('check_ins').insert({
-        practitioner_id: athleteProfile.practitioner_id,
-        athlete_id: athleteProfile.athlete_id,
-        mood_score: form.mood_score,
-        stress_score: form.stress_score,
-        sleep_score: form.sleep_quality,
-        motivation_score: form.commitment_score,
-        readiness_score: form.readiness_score,
-        energy_score: form.energy_score,
-        fatigue_score: form.fatigue_score,
-        soreness_score: form.soreness_score,
-        notes: form.notes || null,
-      }).catch(() => {}) // Don't fail if duplicate
+      // v1-legacy code: this check_ins insert uses the old (practitioner_id,
+      // athlete_id) shape and will fail under v2 RLS. Entire daily-log write
+      // path is rewritten in Phase 6 against v2 (athlete_daily_logs +
+      // athlete_daily_log_shares). Wrapped in try/catch to tolerate the
+      // runtime failure until then — silence the TS error from .catch() on
+      // a Postgrest builder by awaiting first.
+      try {
+        await supabase.from('check_ins').insert({
+          practitioner_id: athleteProfile.practitioner_id,
+          athlete_id: athleteProfile.athlete_id,
+          mood_score: form.mood_score,
+          stress_score: form.stress_score,
+          sleep_score: form.sleep_quality,
+          motivation_score: form.commitment_score,
+          readiness_score: form.readiness_score,
+          energy_score: form.energy_score,
+          fatigue_score: form.fatigue_score,
+          soreness_score: form.soreness_score,
+          notes: form.notes || null,
+        })
+      } catch { /* v2 transition — see comment above */ }
 
       setDone(true)
       qc.invalidateQueries({ queryKey: ['athlete_daily_log_today'] })
