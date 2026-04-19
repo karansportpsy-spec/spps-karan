@@ -1,99 +1,130 @@
 // src/contexts/AuthContext.tsx
+//
+// v2 dual-role auth context.
+//
+//   • Practitioner signup  → signUp(email, password, { role: 'practitioner', ... })
+//   • Athlete signup       → signUp(email, password, { role: 'athlete', ... })
+//
+// For BOTH roles, the database trigger (handle_new_user in migration 3)
+// creates the corresponding profile row automatically. This context loads
+// that profile on sign-in / session-restore and exposes it via:
+//
+//   user           — Supabase auth user (either role)
+//   role           — 'practitioner' | 'athlete' | null
+//   practitioner   — the practitioners row (only when role='practitioner')
+//   athlete        — the athletes row (only when role='athlete')
+//
+// Router guards route based on `role` first; use `practitioner`/`athlete`
+// for page-level reads.
+
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
 import { User, Session, AuthError } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import type { Practitioner } from '@/types'
 
+export type AppRole = 'practitioner' | 'athlete'
+
+export interface AthleteProfile {
+  id:            string
+  email:         string
+  first_name:    string
+  last_name:     string
+  sport:         string | null
+  team:          string | null
+  status:        'unverified' | 'linked' | 'discontinued'
+  uid_code:      string | null
+  timezone:      string
+  language:      string
+  created_at:    string
+  updated_at:    string
+}
+
 interface AuthContextValue {
-  user:             User | null
-  session:          Session | null
-  practitioner:     Practitioner | null
-  loading:          boolean        // auth session loading
-  profileLoading:   boolean        // practitioner profile loading
-  authError:        string | null
-  signIn:           (email: string, password: string) => Promise<void>
-  signUp:           (email: string, password: string, meta?: Partial<Practitioner>) => Promise<{ confirmEmail: boolean }>
-  signOut:          () => Promise<void>
-  refreshProfile:   () => Promise<void>
-  clearError:       () => void
+  user:            User | null
+  session:         Session | null
+  role:            AppRole | null
+  practitioner:    Practitioner | null
+  athlete:         AthleteProfile | null
+  loading:         boolean        // session restoring
+  profileLoading:  boolean        // profile row loading
+  authError:       string | null
+  signIn:          (email: string, password: string) => Promise<void>
+  signUpPractitioner: (email: string, password: string, meta: { first_name: string; last_name: string }) => Promise<{ confirmEmail: boolean }>
+  signUpAthlete:      (email: string, password: string, meta: { first_name: string; last_name: string; sport?: string }) => Promise<{ confirmEmail: boolean }>
+  signOut:         () => Promise<void>
+  refreshProfile:  () => Promise<void>
+  clearError:      () => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-async function fetchProfile(userId: string): Promise<Practitioner | null> {
+// ── Profile fetchers ─────────────────────────────────────────────────────────
+async function fetchPractitioner(userId: string): Promise<Practitioner | null> {
   const { data, error } = await supabase
     .from('practitioners')
     .select('*, organisation:organisations(id,name,type,country,state_province,city,website_url)')
     .eq('id', userId)
     .maybeSingle()
   if (error) {
-    console.error('[SPPS Auth] fetchProfile error:', error.message)
+    console.error('[SPPS Auth] fetchPractitioner error:', error.message)
     return null
   }
   return data as Practitioner | null
 }
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser]                   = useState<User | null>(null)
-  const [session, setSession]             = useState<Session | null>(null)
-  const [practitioner, setPractitioner]   = useState<Practitioner | null>(null)
-  const [loading, setLoading]             = useState(true)      // blocks the whole app
-  const [profileLoading, setProfileLoading] = useState(false)  // just profile fetch
-  const [authError, setAuthError]         = useState<string | null>(null)
+async function fetchAthlete(userId: string): Promise<AthleteProfile | null> {
+  const { data, error } = await supabase
+    .from('athletes')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle()
+  if (error) {
+    console.error('[SPPS Auth] fetchAthlete error:', error.message)
+    return null
+  }
+  return data as AthleteProfile | null
+}
 
-  const loadProfile = useCallback(async (userId: string) => {
+function roleFromUser(u: User | null): AppRole | null {
+  if (!u) return null
+  const r = u.user_metadata?.role
+  if (r === 'athlete') return 'athlete'
+  // Accept both 'practitioner' and legacy 'sport_psychologist' metadata
+  if (r === 'practitioner' || r === 'sport_psychologist') return 'practitioner'
+  return null
+}
+
+// ── Provider ────────────────────────────────────────────────────────────────
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser]                     = useState<User | null>(null)
+  const [session, setSession]               = useState<Session | null>(null)
+  const [practitioner, setPractitioner]     = useState<Practitioner | null>(null)
+  const [athlete, setAthlete]               = useState<AthleteProfile | null>(null)
+  const [loading, setLoading]               = useState(true)
+  const [profileLoading, setProfileLoading] = useState(false)
+  const [authError, setAuthError]           = useState<string | null>(null)
+
+  const role = roleFromUser(user)
+
+  const loadProfileFor = useCallback(async (u: User) => {
+    const r = roleFromUser(u)
+    if (r === null) {
+      console.warn('[SPPS Auth] User has no role metadata — signing out')
+      await supabase.auth.signOut()
+      return
+    }
+
     setProfileLoading(true)
     try {
-      // Use a sentinel to distinguish "timed out" from "no row found".
-      // "timed out" → keep existing practitioner (don't flash null during tab switch).
-      // "null row"  → practitioners row missing; create it then retry once.
-      const TIMED_OUT = Symbol('timed_out')
-      const timeout   = new Promise<typeof TIMED_OUT>(resolve =>
-        setTimeout(() => resolve(TIMED_OUT), 6000)
-      )
-      const result = await Promise.race([fetchProfile(userId), timeout])
-
-      if (result === TIMED_OUT) {
-        // Slow DB — keep whatever we already have; do NOT set null
-        console.warn('[SPPS Auth] loadProfile timed out — keeping existing state')
-        return
-      }
-
-      if (result !== null) {
-        // Happy path: row exists and loaded fine
-        setPractitioner(result)
-        return
-      }
-
-      // result === null → no practitioners row exists yet.
-      // This happens when the DB trigger hasn't fired yet or the client-side
-      // upsert in signUp failed. Attempt to create the row from auth metadata.
-      console.warn('[SPPS Auth] No practitioners row — attempting recovery create')
-      const { data: { user: authUser } } = await supabase.auth.getUser()
-      if (authUser) {
-        await supabase.from('practitioners').upsert({
-          id:                   authUser.id,
-          email:                authUser.email ?? '',
-          first_name:           authUser.user_metadata?.first_name ?? '',
-          last_name:            authUser.user_metadata?.last_name  ?? '',
-          role:                 authUser.user_metadata?.role ?? 'sport_psychologist',
-          hipaa_acknowledged:   false,
-          compliance_completed: false,
-          profile_completed:    false,
-          notification_email:   true,
-          notification_sms:     false,
-        }, { onConflict: 'id' })
-
-        // Retry fetch once after creating the row
-        const recovered = await fetchProfile(authUser.id)
-        setPractitioner(recovered)  // may still be null if RLS blocks — that's ok,
-                                    // router will redirect to login
+      if (r === 'practitioner') {
+        const p = await fetchPractitioner(u.id)
+        setPractitioner(p)
+        setAthlete(null)
       } else {
+        const a = await fetchAthlete(u.id)
+        setAthlete(a)
         setPractitioner(null)
       }
-    } catch (e) {
-      console.error('[SPPS Auth] loadProfile failed:', e)
-      setPractitioner(null)
     } finally {
       setProfileLoading(false)
     }
@@ -102,48 +133,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true
 
-    // ── Initial session check ─────────────────────────────────────────────────
+    // ── Initial session ─────────────────────────────────────────────
     supabase.auth.getSession()
       .then(async ({ data: { session }, error }) => {
         if (!mounted) return
-
         if (error) {
-          // Corrupted token — clear ALL auth-related storage so user sees login page
-          // Clears both the default sb-* key AND the legacy 'spps-auth' custom key
-          console.warn('[SPPS Auth] Corrupted session detected, clearing storage:', error.message)
-          Object.keys(localStorage)
-            .filter(k => k.startsWith('sb-') || k === 'spps-auth')
-            .forEach(k => localStorage.removeItem(k))
+          console.warn('[SPPS Auth] corrupted session, clearing:', error.message)
+          Object.keys(localStorage).filter(k => k.startsWith('sb-') || k === 'spps-auth').forEach(k => localStorage.removeItem(k))
           if (mounted) setLoading(false)
           return
         }
-
         setSession(session)
         setUser(session?.user ?? null)
-
-        if (session?.user) {
-          // Athletes don't have a practitioners row — skip profile loading
-          const role = session.user.user_metadata?.role
-          if (role !== 'athlete') {
-            await loadProfile(session.user.id)
-          }
-        }
-
+        if (session?.user) await loadProfileFor(session.user)
         if (mounted) setLoading(false)
       })
-      .catch((err) => {
-        // Catches JSON parse errors from malformed localStorage values
-        console.error('[SPPS Auth] getSession threw unexpectedly:', err)
+      .catch(err => {
+        console.error('[SPPS Auth] getSession threw:', err)
         Object.keys(localStorage).filter(k => k.startsWith('sb-') || k === 'spps-auth').forEach(k => localStorage.removeItem(k))
         if (mounted) setLoading(false)
       })
 
-    // ── Auth state listener ───────────────────────────────────────────────────
+    // ── Auth event stream ───────────────────────────────────────────
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
 
-      // TOKEN_REFRESHED fires every ~55 min — silently update session
-      // without re-fetching profile or triggering re-renders
       if (event === 'TOKEN_REFRESHED') {
         setSession(session)
         return
@@ -152,13 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event === 'SIGNED_IN') {
         setSession(session)
         setUser(session?.user ?? null)
-        // Athletes don't have a practitioners row — skip
-        if (session?.user && session.user.user_metadata?.role !== 'athlete') {
-          setPractitioner(prev => {
-            if (prev === null) loadProfile(session.user!.id)
-            return prev
-          })
-        }
+        if (session?.user) await loadProfileFor(session.user)
         return
       }
 
@@ -166,7 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null)
         setUser(null)
         setPractitioner(null)
-        // Only clear Supabase keys, not the whole localStorage
+        setAthlete(null)
         Object.keys(localStorage).filter(k => k.startsWith('sb-') || k === 'spps-auth').forEach(k => localStorage.removeItem(k))
         return
       }
@@ -174,11 +182,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event === 'USER_UPDATED') {
         setSession(session)
         setUser(session?.user ?? null)
-        if (session?.user) await loadProfile(session.user.id)
+        if (session?.user) await loadProfileFor(session.user)
         return
       }
 
-      // INITIAL_SESSION, PASSWORD_RECOVERY — update silently
       setSession(session)
       setUser(session?.user ?? null)
     })
@@ -187,35 +194,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mounted = false
       subscription.unsubscribe()
     }
-  }, [loadProfile])
+  }, [loadProfileFor])
 
-  // ── Sign In ─────────────────────────────────────────────────────────────────
+  // ── Sign In (role-agnostic) ─────────────────────────────────────────
   async function signIn(email: string, password: string) {
     setAuthError(null)
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
     if (error) {
       const m = humanize(error)
       setAuthError(m)
       throw new Error(m)
     }
     if (data.user) {
-      if (data.user.user_metadata?.role !== 'athlete') {
-        await loadProfile(data.user.id)
-      }
+      await loadProfileFor(data.user)
     }
   }
 
-  // ── Sign Up ─────────────────────────────────────────────────────────────────
-  async function signUp(email: string, password: string, meta?: Partial<Practitioner>): Promise<{ confirmEmail: boolean }> {
+  // ── Sign Up (practitioner) ──────────────────────────────────────────
+  async function signUpPractitioner(
+    email: string,
+    password: string,
+    meta: { first_name: string; last_name: string }
+  ): Promise<{ confirmEmail: boolean }> {
     setAuthError(null)
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: email.trim(),
       password,
       options: {
         data: {
-          first_name: meta?.first_name ?? '',
-          last_name:  meta?.last_name  ?? '',
-          role:       meta?.role ?? 'sport_psychologist',
+          role: 'practitioner',
+          first_name: meta.first_name,
+          last_name:  meta.last_name,
         },
       },
     })
@@ -225,64 +234,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(m)
     }
 
-    // ── Email confirmation is enabled ──────────────────────────────
-    // data.session is null when Supabase requires email confirmation.
-    // In that case auth.uid() is null, RLS blocks everything, and we
-    // must NOT attempt loadProfile or client-side upserts.  The DB
-    // trigger (handle_new_user) has already created the practitioners
-    // row server-side.  We just tell the UI to show a "check email"
-    // message.
+    // Email confirmation enabled → no session yet
     if (!data.session) {
-      console.info('[SPPS Auth] signUp: email confirmation required — skipping loadProfile')
       return { confirmEmail: true }
     }
 
-    // ── Email confirmation is disabled — session available ─────────
+    // Session available → trigger has already created the practitioners row
     if (data.user) {
-      // Safety-net upsert in case the trigger isn't deployed yet
-      const { error: profileError } = await supabase.from('practitioners').upsert({
-        id:                   data.user.id,
-        email,
-        first_name:           meta?.first_name ?? '',
-        last_name:            meta?.last_name  ?? '',
-        role:                 'sport_psychologist',
-        hipaa_acknowledged:   false,
-        compliance_completed: false,
-        profile_completed:    false,
-        notification_email:   true,
-        notification_sms:     false,
-      }, { onConflict: 'id' })
-
-      if (profileError) {
-        console.warn('[SPPS Auth] Client-side profile upsert failed (trigger is primary):', profileError.message)
-      }
-
-      await loadProfile(data.user.id)
+      await loadProfileFor(data.user)
     }
-
     return { confirmEmail: false }
   }
 
-  // ── Sign Out ────────────────────────────────────────────────────────────────
+  // ── Sign Up (athlete) ───────────────────────────────────────────────
+  async function signUpAthlete(
+    email: string,
+    password: string,
+    meta: { first_name: string; last_name: string; sport?: string }
+  ): Promise<{ confirmEmail: boolean }> {
+    setAuthError(null)
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: {
+        data: {
+          role: 'athlete',
+          first_name: meta.first_name,
+          last_name:  meta.last_name,
+          sport:      meta.sport ?? '',
+        },
+      },
+    })
+    if (error) {
+      const m = humanize(error)
+      setAuthError(m)
+      throw new Error(m)
+    }
+
+    if (!data.session) return { confirmEmail: true }
+
+    if (data.user) {
+      await loadProfileFor(data.user)
+    }
+    return { confirmEmail: false }
+  }
+
   async function signOut() {
     await supabase.auth.signOut()
     setUser(null)
     setSession(null)
     setPractitioner(null)
+    setAthlete(null)
   }
 
-  // ── Refresh Profile ─────────────────────────────────────────────────────────
-  // Called after compliance completion so the router guard sees the updated state
   async function refreshProfile() {
-    if (user) await loadProfile(user.id)
+    if (user) await loadProfileFor(user)
   }
 
   function clearError() { setAuthError(null) }
 
   return (
     <AuthContext.Provider value={{
-      user, session, practitioner, loading, profileLoading, authError,
-      signIn, signUp, signOut, refreshProfile, clearError,
+      user, session, role, practitioner, athlete,
+      loading, profileLoading, authError,
+      signIn, signUpPractitioner, signUpAthlete,
+      signOut, refreshProfile, clearError,
     }}>
       {children}
     </AuthContext.Provider>
@@ -305,5 +321,7 @@ function humanize(error: AuthError): string {
   if (m.includes('rate limit'))                             return 'Too many attempts — please wait a moment and try again.'
   if (m.includes('email address') && m.includes('invalid')) return 'Please enter a valid email address.'
   if (m.includes('signup is disabled'))                     return 'New registrations are currently paused. Please contact support.'
+  if (m.includes('email_already_used_as_practitioner'))     return 'This email is already registered as a practitioner account.'
+  if (m.includes('email_already_used_as_athlete'))          return 'This email is already registered as an athlete account.'
   return error.message
 }
