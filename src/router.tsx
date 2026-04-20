@@ -27,6 +27,7 @@ import ProfileSetupPage from '@/pages/auth/ProfileSetupPage'
 
 const DashboardPage            = React.lazy(() => import('@/pages/Dashboard'))
 const AthletesPage             = React.lazy(() => import('@/pages/athletes/AthletesPage'))
+const ArchivedAthletesPage     = React.lazy(() => import('@/pages/athletes/ArchivedAthletesPage'))
 const IOCMentalHealthPage      = React.lazy(() => import('@/pages/assessments/IOCMentalHealthPage'))
 const PsychophysiologyPage     = React.lazy(() => import('@/pages/assessments/PsychophysiologyPage'))
 const NeurocognitivePage       = React.lazy(() => import('@/pages/assessments/NeurocognitivePage'))
@@ -165,6 +166,7 @@ const router = createBrowserRouter([
     children: [
       { path: '/dashboard',                  element: routeElement(<DashboardPage />,         'Loading dashboard...') },
       { path: '/athletes',                   element: routeElement(<AthletesPage />,          'Loading athletes...') },
+      { path: '/athletes/archived',          element: routeElement(<ArchivedAthletesPage />,  'Loading archived athletes...') },
       { path: '/athletes/:athleteId/case',   element: routeElement(<CaseFormulationPage />,   'Loading case formulation...') },
       { path: '/sessions',                   element: routeElement(<SessionsPage />,          'Loading sessions...') },
       { path: '/checkins',                   element: routeElement(<CheckInsPage />,          'Loading check-ins...') },
