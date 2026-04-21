@@ -52,6 +52,9 @@ async function requireCurrentUserId() {
   return data.user?.id ?? null;
 }
 
+const PROGRAM_MISSING_COLUMN_REGEX =
+  /Could not find the ['"]([^'"]+)['"] column|column ["']([^"']+)["'] of relation ["']intervention_programs["'] does not exist/i;
+
 export async function assignInterventionProgram(payload: {
   athleteId: string;
   programId?: string;
@@ -82,35 +85,77 @@ export async function assignInterventionProgram(payload: {
       if (!payload.title) {
         throw new Error('Provide programId or title to create a program.');
       }
-      const { data: program, error: programError } = await supabase
-        .from('intervention_programs')
-        .insert({
-          practitioner_id: practitionerId,
-          title: payload.title,
-          description: payload.description ?? null,
-          duration_weeks: payload.durationWeeks ?? null,
-          milestones: payload.milestones ?? [],
-        })
-        .select('id,title,description,duration_weeks,milestones')
-        .single();
-      if (programError) throw programError;
-      programId = program.id;
+      const row: Record<string, unknown> = {
+        practitioner_id: practitionerId,
+        title: payload.title,
+        description: payload.description ?? null,
+        duration_weeks: payload.durationWeeks ?? null,
+        milestones: payload.milestones ?? [],
+      };
+      const removedColumns = new Set<string>();
+      let createdProgram: { id: string } | null = null;
+
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        const { data: program, error: programError } = await supabase
+          .from('intervention_programs')
+          .insert(row)
+          .select('id')
+          .single();
+
+        if (!programError) {
+          createdProgram = program as { id: string };
+          break;
+        }
+
+        const message = programError.message ?? '';
+        const match = message.match(PROGRAM_MISSING_COLUMN_REGEX);
+        const missingColumn = match?.[1] ?? match?.[2];
+        if (missingColumn && missingColumn in row && !removedColumns.has(missingColumn)) {
+          delete row[missingColumn];
+          removedColumns.add(missingColumn);
+          continue;
+        }
+
+        throw programError;
+      }
+
+      if (!createdProgram?.id) {
+        throw new Error('Failed to create intervention program after compatibility retries.');
+      }
+      programId = createdProgram.id;
     }
 
-    const { data: assignment, error: assignmentError } = await supabase
+    const insertAssignment = {
+      intervention_program_id: programId,
+      athlete_id: payload.athleteId,
+      practitioner_id: practitionerId,
+      due_date: payload.dueDate ?? null,
+      status: 'assigned',
+      completion_percentage: 0,
+    };
+
+    let assignment: any = null;
+    let assignmentError: any = null;
+
+    const primarySelect =
+      '*, intervention_program:intervention_programs(title,description,duration_weeks,milestones), athlete:athletes(first_name,last_name)';
+    const fallbackSelect =
+      '*, intervention_program:intervention_programs(title,description,duration_weeks), athlete:athletes(first_name,last_name)';
+
+    ({ data: assignment, error: assignmentError } = await supabase
       .from('athlete_interventions')
-      .insert({
-        intervention_program_id: programId,
-        athlete_id: payload.athleteId,
-        practitioner_id: practitionerId,
-        due_date: payload.dueDate ?? null,
-        status: 'assigned',
-        completion_percentage: 0,
-      })
-      .select(
-        '*, intervention_program:intervention_programs(title,description,duration_weeks,milestones), athlete:athletes(first_name,last_name)'
-      )
-      .single();
+      .insert(insertAssignment)
+      .select(primarySelect)
+      .single());
+
+    if (assignmentError && /milestones/i.test(assignmentError.message ?? '')) {
+      ({ data: assignment, error: assignmentError } = await supabase
+        .from('athlete_interventions')
+        .insert(insertAssignment)
+        .select(fallbackSelect)
+        .single());
+    }
+
     if (assignmentError) throw assignmentError;
     return mapAssignmentRow(assignment);
   }
@@ -132,20 +177,30 @@ export async function getInterventionAssignments(athleteId?: string, preferAthle
       throw error;
     }
 
-    let query = supabase
-      .from('athlete_interventions')
-      .select(
-        '*, intervention_program:intervention_programs(title,description,duration_weeks,milestones), athlete:athletes(first_name,last_name)'
-      )
-      .order('assigned_at', { ascending: false });
+    const primarySelect =
+      '*, intervention_program:intervention_programs(title,description,duration_weeks,milestones), athlete:athletes(first_name,last_name)';
+    const fallbackSelect =
+      '*, intervention_program:intervention_programs(title,description,duration_weeks), athlete:athletes(first_name,last_name)';
 
-    if (athleteId) {
-      query = query.eq('athlete_id', athleteId);
-    } else if (!preferAthleteToken) {
-      query = query.eq('practitioner_id', userId);
+    const buildQuery = (selectExpr: string) => {
+      let query = supabase
+        .from('athlete_interventions')
+        .select(selectExpr)
+        .order('assigned_at', { ascending: false });
+
+      if (athleteId) {
+        query = query.eq('athlete_id', athleteId);
+      } else if (!preferAthleteToken) {
+        query = query.eq('practitioner_id', userId);
+      }
+      return query;
+    };
+
+    let { data, error: listError } = await buildQuery(primarySelect);
+    if (listError && /milestones/i.test(listError.message ?? '')) {
+      ({ data, error: listError } = await buildQuery(fallbackSelect));
     }
 
-    const { data, error: listError } = await query;
     if (listError) throw listError;
     return (data ?? []).map(mapAssignmentRow);
   }

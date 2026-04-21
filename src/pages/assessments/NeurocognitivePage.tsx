@@ -111,12 +111,38 @@ function useSaveNeuro() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (payload: any) => {
-      const { data, error } = await supabase
-        .from('neurocognitive')
-        .insert({ ...payload, practitioner_id: user!.id })
-        .select().single()
-      if (error) throw error
-      return data
+      const row: Record<string, any> = { ...payload, practitioner_id: user!.id }
+      const removedColumns = new Set<string>()
+      const missingColumnRegex =
+        /Could not find the ['"]([^'"]+)['"] column|column ["']([^"']+)["'] of relation ["']neurocognitive["'] does not exist/i
+
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const { data, error } = await supabase
+          .from('neurocognitive')
+          .insert(row)
+          .select()
+          .single()
+
+        if (!error) return data
+
+        const msg = error.message ?? ''
+        if (error.code === '23502' && msg.includes('custom_metrics')) {
+          row.custom_metrics = Array.isArray(row.custom_metrics) ? row.custom_metrics : []
+          continue
+        }
+
+        const match = msg.match(missingColumnRegex)
+        const missingColumn = match?.[1] ?? match?.[2]
+        if (missingColumn && missingColumn in row && !removedColumns.has(missingColumn)) {
+          delete row[missingColumn]
+          removedColumns.add(missingColumn)
+          continue
+        }
+
+        throw error
+      }
+
+      throw new Error('Failed to save neurocognitive assessment after compatibility retries.')
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['neuro'] }),
   })

@@ -1233,9 +1233,17 @@ export default function CaseFormulationPage() {
           }
         }
 
-        const activationMessage = response.activationEmailSent
-          ? `Portal activated and activation email sent to ${athlete.email || 'athlete email'}.`
-          : 'Portal activated, but email could not be sent automatically. Share the link below with the athlete manually.'
+        const activationStatus =
+          response.activationEmailStatus ||
+          (response.activationEmailSent ? 'queued' : 'failed')
+        const activationMessage =
+          activationStatus === 'sent'
+            ? `Portal activated and activation email sent to ${athlete.email || 'athlete email'}.`
+            : activationStatus === 'queued'
+              ? `Portal activated. Email delivery was queued for ${athlete.email || 'athlete email'} (provider-delivery may take time).`
+              : activationStatus === 'disabled'
+                ? 'Portal activated. Activation email is disabled on the server, so share the link below manually.'
+                : 'Portal activated, but email could not be confirmed. Share the link below with the athlete manually.'
 
         alert(`${activationMessage}\n\nAthlete portal link:\n${shareableLink}`)
       } else {

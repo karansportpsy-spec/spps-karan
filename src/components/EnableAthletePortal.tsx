@@ -128,23 +128,22 @@ export default function EnableAthletePortal({
 
       if (inviteErr) throw new Error(`Could not create invite: ${inviteErr.message}`)
 
-      // 2. Pre-seed the conversation so the practitioner can DM immediately
-      await supabase
-        .from('conversations')
-        .upsert(
+      // Auto-create conversation so practitioner can message first.
+      // Ignore failures for legacy schemas where this table/constraint may not exist.
+      try {
+        await supabase.from('conversations').upsert(
           {
-            practitioner_id:       user.id,
-            athlete_id:            athleteId,
-            status:                'active',
-            practitioner_unread:   0,
-            athlete_unread:        0,
+            practitioner_id: user.id,
+            athlete_id: athleteId,
+            status: 'active',
+            practitioner_unread: 0,
+            athlete_unread: 0,
           },
           { onConflict: 'practitioner_id,athlete_id' }
         )
-        .then(() => {})
-        // Don't fail the whole flow on a secondary upsert
-        // @ts-ignore - `.then` on supabase builder returns PromiseLike
-        .catch?.(() => {})
+      } catch {
+        // No-op on conversation bootstrap failure.
+      }
 
       // 3. Ask the edge function to email the athlete
       const send = await invokeSendEmail(invite.id)

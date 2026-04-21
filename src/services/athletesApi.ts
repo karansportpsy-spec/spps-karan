@@ -54,6 +54,9 @@ export async function setAthletePortalActivation(
       message: string;
       athlete: any;
       activationEmailSent: boolean;
+      activationEmailStatus?: 'not_requested' | 'disabled' | 'sent' | 'queued' | 'failed';
+      activationEmailMethod?: string | null;
+      activationEmailDetail?: string | null;
       portalLoginUrl?: string | null;
       portalInviteUrl?: string | null;
     }>(
@@ -79,6 +82,9 @@ export async function setAthletePortalActivation(
     const portalLoginUrl = `${baseUrl}/athlete/login`;
     let portalInviteUrl: string | null = null;
     let activationEmailSent = false;
+    let activationEmailStatus: 'not_requested' | 'sent' | 'queued' | 'failed' = 'not_requested';
+    let activationEmailMethod: string | null = null;
+    let activationEmailDetail: string | null = null;
     const updatePayload: Record<string, unknown> = {
       is_portal_activated: isPortalActivated,
       portal_activated_at: isPortalActivated ? nowIso : null,
@@ -122,6 +128,8 @@ export async function setAthletePortalActivation(
         });
         if (!resetErr) {
           activationEmailSent = true;
+          activationEmailStatus = 'queued';
+          activationEmailMethod = 'supabase_reset';
         } else {
           const { error: otpErr } = await supabase.auth.signInWithOtp({
             email: data.email,
@@ -134,6 +142,12 @@ export async function setAthletePortalActivation(
             },
           });
           activationEmailSent = !otpErr;
+          activationEmailStatus = otpErr ? 'failed' : 'queued';
+          activationEmailMethod = otpErr ? null : 'supabase_otp';
+          activationEmailDetail = otpErr?.message || null;
+          if (resetErr?.message && !activationEmailSent) {
+            activationEmailDetail = activationEmailDetail || resetErr.message;
+          }
         }
       }
     }
@@ -142,6 +156,9 @@ export async function setAthletePortalActivation(
       message: isPortalActivated ? 'Athlete portal activated.' : 'Athlete portal deactivated.',
       athlete: data,
       activationEmailSent,
+      activationEmailStatus,
+      activationEmailMethod,
+      activationEmailDetail,
       portalLoginUrl: isPortalActivated ? portalLoginUrl : null,
       portalInviteUrl: isPortalActivated ? portalInviteUrl : null,
     };

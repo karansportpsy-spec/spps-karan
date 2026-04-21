@@ -207,12 +207,54 @@ function useCreatePsychReadiness() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (payload: Omit<PsychReadiness, 'id' | 'practitioner_id' | 'created_at'>) => {
-      const { data, error } = await supabase
-        .from('psych_readiness')
-        .insert({ ...payload, practitioner_id: user!.id })
-        .select().single()
-      if (error) throw error
-      return data
+      const row: Record<string, any> = { ...payload, practitioner_id: user!.id }
+      const removedColumns = new Set<string>()
+      const missingColumnRegex =
+        /Could not find the ['"]([^'"]+)['"] column|column ["']([^"']+)["'] of relation ["']psych_readiness["'] does not exist/i
+
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const { data, error } = await supabase
+          .from('psych_readiness')
+          .insert(row)
+          .select()
+          .single()
+
+        if (!error) return data
+
+        const msg = error.message ?? ''
+        if (error.code === '23502' && msg.includes('acl_rsi_scores')) {
+          row.acl_rsi_scores = row.acl_rsi_scores || {}
+          continue
+        }
+        if (error.code === '23502' && msg.includes('tsk_scores')) {
+          row.tsk_scores = row.tsk_scores || {}
+          continue
+        }
+        if (error.code === '23502' && msg.includes('sirsi_scores')) {
+          row.sirsi_scores = row.sirsi_scores || {}
+          continue
+        }
+        if (error.code === '23502' && msg.includes('overall_readiness')) {
+          row.overall_readiness = Number(row.overall_readiness || 0)
+          continue
+        }
+        if (error.code === '23502' && msg.includes('ready_to_return')) {
+          row.ready_to_return = Boolean(row.ready_to_return)
+          continue
+        }
+
+        const match = msg.match(missingColumnRegex)
+        const missingColumn = match?.[1] ?? match?.[2]
+        if (missingColumn && missingColumn in row && !removedColumns.has(missingColumn)) {
+          delete row[missingColumn]
+          removedColumns.add(missingColumn)
+          continue
+        }
+
+        throw error
+      }
+
+      throw new Error('Failed to save psychological readiness assessment after compatibility retries.')
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['psych_readiness'] }),
   })

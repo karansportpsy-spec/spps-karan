@@ -52,6 +52,9 @@ export function registerAthleteRoutes(app) {
 
         const athlete = updateRes.rows[0];
         let activationEmailSent = false;
+        let activationEmailStatus = 'not_requested';
+        let activationEmailMethod = null;
+        let activationEmailDetail = null;
         const baseUrl = String(req.headers.origin || env.clientOrigin || '').replace(/\/+$/, '');
         const portalLoginUrl = `${baseUrl}/athlete/login`;
         let portalInviteUrl = null;
@@ -75,12 +78,16 @@ export function registerAthleteRoutes(app) {
 
         if (payload.isPortalActivated && payload.sendActivationEmail && athlete.email) {
           try {
-            activationEmailSent = await sendActivationEmail({
+            const emailDispatch = await sendActivationEmail({
               to: athlete.email,
               athleteName: `${athlete.first_name} ${athlete.last_name}`,
               portalLoginUrl,
               inviteUrl: portalInviteUrl,
             });
+            activationEmailStatus = emailDispatch?.status || 'failed';
+            activationEmailMethod = emailDispatch?.method || null;
+            activationEmailDetail = emailDispatch?.detail || null;
+            activationEmailSent = ['sent', 'queued'].includes(activationEmailStatus);
 
             if (activationEmailSent) {
               await pool.query(
@@ -101,6 +108,9 @@ export function registerAthleteRoutes(app) {
             : 'Athlete portal deactivated.',
           athlete,
           activationEmailSent,
+          activationEmailStatus,
+          activationEmailMethod,
+          activationEmailDetail,
           portalLoginUrl: payload.isPortalActivated ? portalLoginUrl : null,
           portalInviteUrl: payload.isPortalActivated ? portalInviteUrl : null,
         });
