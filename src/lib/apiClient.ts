@@ -67,11 +67,32 @@ export async function apiJson<T>(
   path: string,
   init: RequestInit & { preferAthleteToken?: boolean; noAuth?: boolean } = {}
 ): Promise<T> {
-  const res = await apiFetch(path, init);
+  let res: Response;
+  try {
+    res = await apiFetch(path, init);
+  } catch (error) {
+    console.error('[SPPS API] Network request failed:', { path, error });
+    throw new Error(`Network request failed for ${path}`);
+  }
+
+  const contentType = res.headers.get('content-type') || '';
   if (!res.ok) {
     const err = await safeError(res);
+    console.error('[SPPS API] Request failed:', { path, status: res.status, contentType, err });
     throw new Error(err || `Request failed with status ${res.status}`);
   }
+
+  if (!contentType.toLowerCase().includes('application/json')) {
+    const body = await res.text();
+    console.error('[SPPS API] Expected JSON but received:', {
+      path,
+      status: res.status,
+      contentType,
+      bodyPreview: body.slice(0, 200),
+    });
+    throw new Error(`Expected JSON response from ${path}, received ${contentType || 'unknown content type'}.`);
+  }
+
   return (await res.json()) as T;
 }
 

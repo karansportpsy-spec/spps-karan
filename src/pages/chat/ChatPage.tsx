@@ -38,11 +38,11 @@ export default function ChatPage() {
   const endRef = useRef<HTMLDivElement | null>(null)
 
   const chatAthletes = useMemo(
-    () => athletes.filter((a: any) => Boolean((a as any).portal_user_id) && Boolean((a as any).is_portal_activated)),
+    () => athletes.filter((a: any) => Boolean((a as any).is_portal_activated)),
     [athletes]
   )
   const selectedAthlete = chatAthletes.find((a) => a.id === selectedAthleteId) || null
-  const peerId = (selectedAthlete as any)?.portal_user_id as string | undefined
+  const peerId = selectedAthlete?.id
 
   useEffect(() => {
     if (!selectedAthleteId && chatAthletes.length > 0) {
@@ -72,7 +72,7 @@ export default function ChatPage() {
         }
         socketRef.current = socket
         socket.on('chat:new', (incoming: ChatMessage) => {
-          const selectedPeerId = (selectedAthlete as any)?.portal_user_id
+          const selectedPeerId = selectedAthlete?.id
           if (!selectedPeerId) return
           const matchPeer = incoming.sender_id === selectedPeerId || incoming.receiver_id === selectedPeerId
           if (!matchPeer) return

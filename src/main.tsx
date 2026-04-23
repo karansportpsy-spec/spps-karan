@@ -36,6 +36,14 @@ const queryClient = new QueryClient({
 // Both Practitioner and Portal providers are siblings under AuthProvider —
 // each is a no-op for the wrong role, so it's safe to mount both.
 // AthleteProvider stays inside PortalProvider because it depends on it.
+window.addEventListener('error', event => {
+  console.error('[SPPS Global Error]', event.error ?? event.message)
+})
+
+window.addEventListener('unhandledrejection', event => {
+  console.error('[SPPS Unhandled Rejection]', event.reason)
+})
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>

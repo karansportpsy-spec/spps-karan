@@ -13,7 +13,7 @@ export async function resolveUserRole(userId) {
   const practitionerRes = await pool.query('select id from practitioners where id = $1 limit 1', [userId]);
   if (practitionerRes.rowCount > 0) return 'practitioner';
 
-  const athleteRes = await pool.query('select id from athletes where portal_user_id = $1 limit 1', [userId]);
+  const athleteRes = await pool.query('select id from athletes where id = $1 limit 1', [userId]);
   if (athleteRes.rowCount > 0) return 'athlete';
 
   return 'unknown';
@@ -45,9 +45,20 @@ export async function authenticateRequest(req, res, next) {
 
     if (role === 'athlete') {
       const athleteRes = await pool.query(
-        `select id, practitioner_id, is_portal_activated
-         from athletes
-         where portal_user_id = $1
+        `select
+           a.id,
+           a.is_portal_activated,
+           link.practitioner_id
+         from athletes a
+         left join lateral (
+           select practitioner_id
+           from practitioner_athlete_links
+           where athlete_id = a.id
+             and status = 'active'
+           order by linked_at desc
+           limit 1
+         ) link on true
+         where a.id = $1
          limit 1`,
         [user.id]
       );

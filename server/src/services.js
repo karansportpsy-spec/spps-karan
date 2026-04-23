@@ -106,11 +106,27 @@ export async function sendActivationEmail({ to, athleteName, portalLoginUrl, inv
   };
 }
 
-export async function getAthleteByPortalUserId(userId) {
+export async function getAthleteByAuthUserId(userId) {
   const result = await pool.query(
-    `select id, practitioner_id, first_name, last_name, email, sport, team, is_portal_activated
-     from athletes
-     where portal_user_id = $1
+    `select
+       a.id,
+       link.practitioner_id,
+       a.first_name,
+       a.last_name,
+       a.email,
+       a.sport,
+       a.team,
+       a.is_portal_activated
+     from athletes a
+     left join lateral (
+       select practitioner_id
+       from practitioner_athlete_links
+       where athlete_id = a.id
+         and status = 'active'
+       order by linked_at desc
+       limit 1
+     ) link on true
+     where a.id = $1
      limit 1`,
     [userId]
   );
@@ -142,10 +158,10 @@ export async function assertMessagePeerAccess({ senderId, senderRole, receiverId
   if (senderRole === 'practitioner' && receiverRole === 'athlete') {
     const result = await pool.query(
       `select 1
-       from athletes
+       from practitioner_athlete_links
        where practitioner_id = $1
-         and portal_user_id = $2
-         and is_portal_activated = true
+         and athlete_id = $2
+         and status = 'active'
        limit 1`,
       [senderId, receiverId]
     );
@@ -155,10 +171,10 @@ export async function assertMessagePeerAccess({ senderId, senderRole, receiverId
   if (senderRole === 'athlete' && receiverRole === 'practitioner') {
     const result = await pool.query(
       `select 1
-       from athletes
-       where portal_user_id = $1
+       from practitioner_athlete_links
+       where athlete_id = $1
          and practitioner_id = $2
-         and is_portal_activated = true
+         and status = 'active'
        limit 1`,
       [senderId, receiverId]
     );

@@ -19,7 +19,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
 import { User, Session, AuthError } from '@supabase/supabase-js'
-import { supabase } from '@/lib/supabase'
+import { supabase, isSupabaseConfigured, getSupabaseConfigError } from '@/lib/supabase'
 import type { Practitioner } from '@/types'
 
 export type AppRole = 'practitioner' | 'athlete'
@@ -85,6 +85,22 @@ async function fetchAthlete(userId: string): Promise<AthleteProfile | null> {
   return data as AthleteProfile | null
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    promise.then(
+      value => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      error => {
+        clearTimeout(timer)
+        reject(error)
+      }
+    )
+  })
+}
+
 function roleFromUser(u: User | null): AppRole | null {
   if (!u) return null
   const r = u.user_metadata?.role
@@ -110,6 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const r = roleFromUser(u)
     if (r === null) {
       console.warn('[SPPS Auth] User has no role metadata — signing out')
+      setAuthError('Your account is missing role metadata. Please contact support.')
       await supabase.auth.signOut()
       return
     }
@@ -117,14 +134,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfileLoading(true)
     try {
       if (r === 'practitioner') {
-        const p = await fetchPractitioner(u.id)
+        const p = await withTimeout(fetchPractitioner(u.id), 10000, 'fetchPractitioner')
         setPractitioner(p)
         setAthlete(null)
+        if (!p) {
+          setAuthError('Signed in, but your practitioner profile could not be loaded.')
+          await supabase.auth.signOut()
+        }
       } else {
-        const a = await fetchAthlete(u.id)
+        const a = await withTimeout(fetchAthlete(u.id), 10000, 'fetchAthlete')
         setAthlete(a)
         setPractitioner(null)
+        if (!a) {
+          setAuthError('Signed in, but your athlete profile could not be loaded.')
+          await supabase.auth.signOut()
+        }
       }
+    } catch (err) {
+      console.error('[SPPS Auth] loadProfileFor failed:', err)
+      setAuthError((err as Error)?.message || 'Unable to load your account profile.')
+      throw err
     } finally {
       setProfileLoading(false)
     }
@@ -133,8 +162,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true
 
+    if (!isSupabaseConfigured) {
+      setAuthError(getSupabaseConfigError())
+      setLoading(false)
+      return () => { mounted = false }
+    }
+
     // ── Initial session ─────────────────────────────────────────────
-    supabase.auth.getSession()
+    withTimeout(supabase.auth.getSession(), 10000, 'getSession')
       .then(async ({ data: { session }, error }) => {
         if (!mounted) return
         if (error) {
@@ -145,7 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         setSession(session)
         setUser(session?.user ?? null)
-        if (session?.user) await loadProfileFor(session.user)
+        if (session?.user) await withTimeout(loadProfileFor(session.user), 10000, 'Initial profile load')
         if (mounted) setLoading(false)
       })
       .catch(err => {
@@ -156,38 +191,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // ── Auth event stream ───────────────────────────────────────────
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return
+      try {
+        if (!mounted) return
 
-      if (event === 'TOKEN_REFRESHED') {
-        setSession(session)
-        return
-      }
+        if (event === 'TOKEN_REFRESHED') {
+          setSession(session)
+          return
+        }
 
-      if (event === 'SIGNED_IN') {
+        if (event === 'SIGNED_IN') {
+          setSession(session)
+          setUser(session?.user ?? null)
+          if (session?.user) await withTimeout(loadProfileFor(session.user), 10000, 'SIGNED_IN profile load')
+          return
+        }
+
+        if (event === 'SIGNED_OUT') {
+          setSession(null)
+          setUser(null)
+          setPractitioner(null)
+          setAthlete(null)
+          Object.keys(localStorage).filter(k => k.startsWith('sb-') || k === 'spps-auth').forEach(k => localStorage.removeItem(k))
+          return
+        }
+
+        if (event === 'USER_UPDATED') {
+          setSession(session)
+          setUser(session?.user ?? null)
+          if (session?.user) await withTimeout(loadProfileFor(session.user), 10000, 'USER_UPDATED profile load')
+          return
+        }
+
         setSession(session)
         setUser(session?.user ?? null)
-        if (session?.user) await loadProfileFor(session.user)
-        return
+      } catch (err) {
+        console.error('[SPPS Auth] onAuthStateChange failed:', err)
+        setAuthError((err as Error)?.message || 'Authentication state update failed.')
       }
-
-      if (event === 'SIGNED_OUT') {
-        setSession(null)
-        setUser(null)
-        setPractitioner(null)
-        setAthlete(null)
-        Object.keys(localStorage).filter(k => k.startsWith('sb-') || k === 'spps-auth').forEach(k => localStorage.removeItem(k))
-        return
-      }
-
-      if (event === 'USER_UPDATED') {
-        setSession(session)
-        setUser(session?.user ?? null)
-        if (session?.user) await loadProfileFor(session.user)
-        return
-      }
-
-      setSession(session)
-      setUser(session?.user ?? null)
     })
 
     return () => {
@@ -198,6 +238,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── Sign In (role-agnostic) ─────────────────────────────────────────
   async function signIn(email: string, password: string) {
+    if (!isSupabaseConfigured) {
+      const message = getSupabaseConfigError()
+      setAuthError(message)
+      throw new Error(message)
+    }
     setAuthError(null)
     const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
     if (error) {
@@ -216,6 +261,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     password: string,
     meta: { first_name: string; last_name: string }
   ): Promise<{ confirmEmail: boolean }> {
+    if (!isSupabaseConfigured) {
+      const message = getSupabaseConfigError()
+      setAuthError(message)
+      throw new Error(message)
+    }
     setAuthError(null)
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
@@ -226,6 +276,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           first_name: meta.first_name,
           last_name:  meta.last_name,
         },
+        emailRedirectTo: typeof window !== 'undefined'
+          ? new URL('/auth/login', window.location.origin).toString()
+          : undefined,
       },
     })
     if (error) {
@@ -252,6 +305,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     password: string,
     meta: { first_name: string; last_name: string; sport?: string }
   ): Promise<{ confirmEmail: boolean }> {
+    if (!isSupabaseConfigured) {
+      const message = getSupabaseConfigError()
+      setAuthError(message)
+      throw new Error(message)
+    }
     setAuthError(null)
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
@@ -263,6 +321,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           last_name:  meta.last_name,
           sport:      meta.sport ?? '',
         },
+        emailRedirectTo: typeof window !== 'undefined'
+          ? new URL('/athlete/login', window.location.origin).toString()
+          : undefined,
       },
     })
     if (error) {

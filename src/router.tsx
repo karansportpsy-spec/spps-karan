@@ -48,6 +48,7 @@ const ChatPage                 = React.lazy(() => import('@/pages/chat/ChatPage'
 
 const AthleteLoginPage        = React.lazy(() => import('@/pages/athlete/AthleteLoginPage'))
 const AthleteSignupPage       = React.lazy(() => import('@/pages/athlete/AthleteSignupPage'))
+const AcceptInvitePage        = React.lazy(() => import('@/pages/athletes/AcceptInvitePage'))
 const AthleteDashboard        = React.lazy(() => import('@/pages/athletes/AthleteDashboard'))
 const AthleteMessagesPage     = React.lazy(() => import('@/pages/athletes/AthleteMessagesPage'))
 const AthleteProgramPage      = React.lazy(() => import('@/pages/athletes/AthleteProgramPage'))
@@ -139,7 +140,7 @@ const router = createBrowserRouter([
 
   // Legacy paths → dashboard
   { path: '/athlete/portal',        element: <Navigate to="/athlete/dashboard" replace /> },
-  { path: '/athlete/accept-invite', element: <Navigate to="/athlete/login" replace /> },
+  { path: '/athlete/accept-invite', element: routeElement(<AcceptInvitePage />, 'Loading invitation...') },
 
   // Compliance / profile-setup (kept accessible for existing flows; they are
   // not currently gate-enforced in Phase 2)

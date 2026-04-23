@@ -7,7 +7,6 @@ import { Server as SocketIOServer } from 'socket.io';
 
 import { env } from './env.js';
 import { authenticateRequest } from './middleware/auth.js';
-import { registerAuthRoutes } from './routes/authRoutes.js';
 import { registerAthleteRoutes } from './routes/athleteRoutes.js';
 import { registerAssessmentRoutes } from './routes/assessmentRoutes.js';
 import { registerInterventionRoutes } from './routes/interventionRoutes.js';
@@ -34,8 +33,6 @@ app.use(morgan('dev'));
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'spps-api', timestamp: new Date().toISOString() });
 });
-
-registerAuthRoutes(app);
 
 app.use(env.apiBasePath, authenticateRequest);
 registerAthleteRoutes(app);

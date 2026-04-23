@@ -72,13 +72,12 @@ function shapeV1(row: LinkRow, practitionerId: string): Athlete | null {
     notes: undefined,
     emergency_contact_name: undefined,
     emergency_contact_phone: undefined,
-    is_portal_activated: true,
-    portal_activated_at: a.created_at,
-    portal_user_id: a.id,
-    uid_code: a.uid_code ?? undefined,
-    age_group: undefined,
-    created_at: row.linked_at,
-    updated_at: a.updated_at,
+    is_portal_activated:    true,                      // in v2 every athlete is auth-backed
+    portal_activated_at:    a.created_at,
+    uid_code:               a.uid_code ?? undefined,
+    age_group:              undefined,
+    created_at:             row.linked_at,             // when *this* practitioner linked
+    updated_at:             a.updated_at,
   }
 }
 

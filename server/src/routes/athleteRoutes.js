@@ -4,7 +4,7 @@ import { env } from '../env.js';
 import { pool } from '../db.js';
 import { requireRoles } from '../middleware/auth.js';
 import {
-  getAthleteByPortalUserId,
+  getAthleteByAuthUserId,
   parseCsvIds,
   loadAthleteExportData,
   buildAthleteCsv,
@@ -16,7 +16,7 @@ import { sanitizeCsvFilename } from '../utils/helpers.js';
 export function registerAthleteRoutes(app) {
   app.get(`${env.apiBasePath}/auth/me`, async (req, res) => {
     if (req.user.role === 'athlete') {
-      const athlete = await getAthleteByPortalUserId(req.user.id);
+      const athlete = await getAthleteByAuthUserId(req.user.id);
       if (!athlete) return res.status(404).json({ message: 'Athlete profile not found.' });
       return res.json({ user: req.user, athlete });
     }

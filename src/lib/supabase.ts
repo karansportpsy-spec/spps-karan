@@ -6,6 +6,14 @@ import { createClient } from '@supabase/supabase-js'
 
 const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL  as string | undefined
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
+const SUPABASE_CONFIG_ERROR =
+  'Missing Supabase credentials. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your environment and redeploy.'
+
+export const isSupabaseConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON)
+
+export function getSupabaseConfigError() {
+  return SUPABASE_CONFIG_ERROR
+}
 
 // Log a clear warning in the console instead of throwing.
 // A module-level throw fires BEFORE React mounts — producing a completely

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { pool } from './db.js';
 import { supabaseAdmin } from './supabase.js';
 import { resolveUserRole } from './middleware/auth.js';
-import { assertMessagePeerAccess, getAthleteByPortalUserId, persistMessage } from './services.js';
+import { assertMessagePeerAccess, getAthleteByAuthUserId, persistMessage } from './services.js';
 import { buildConversationKey } from './utils/helpers.js';
 import { messageSendSchema } from './routes/messageRoutes.js';
 
@@ -27,7 +27,7 @@ export function registerSocketHandlers(io) {
       };
 
       if (role === 'athlete') {
-        const athlete = await getAthleteByPortalUserId(data.user.id);
+        const athlete = await getAthleteByAuthUserId(data.user.id);
         socketUser.athleteId = athlete?.id;
         socketUser.practitionerId = athlete?.practitioner_id;
       }
