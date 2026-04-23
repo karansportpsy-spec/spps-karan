@@ -32,13 +32,12 @@ export function getAthleteAccessToken() {
 }
 
 export async function getAuthToken(preferAthleteToken = false): Promise<string | null> {
-  if (preferAthleteToken) {
-    const athleteToken = getAthleteAccessToken();
-    if (athleteToken) return athleteToken;
-  }
-
   const { data } = await supabase.auth.getSession();
   if (data.session?.access_token) return data.session.access_token;
+
+  if (preferAthleteToken) {
+    return getAthleteAccessToken();
+  }
 
   return getAthleteAccessToken();
 }
