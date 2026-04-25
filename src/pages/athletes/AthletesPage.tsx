@@ -16,7 +16,7 @@ import { useNavigate, Link as RouterLink } from 'react-router-dom'
 import {
   Search, UserPlus, Archive, Users, MessageCircle,
   Filter, AlertCircle, RefreshCw, ChevronRight,
-  MoreVertical, FileText, Calendar,
+  MoreVertical, FileText, Calendar, ClipboardList,
 } from 'lucide-react'
 import AppShell from '@/components/layout/AppShell'
 import {
@@ -25,6 +25,7 @@ import {
 } from '@/contexts/PractitionerContext'
 import LinkAthleteModal   from '@/components/practitioner/LinkAthleteModal'
 import ArchiveLinkModal   from '@/components/practitioner/ArchiveLinkModal'
+import AddAthleteIntakeModal from '@/components/practitioner/AddAthleteIntakeModal'
 
 export default function AthletesPage() {
   const navigate = useNavigate()
@@ -35,6 +36,7 @@ export default function AthletesPage() {
   const [search, setSearch]         = useState('')
   const [sportFilter, setSportFilter] = useState<string>('')
   const [linkOpen, setLinkOpen]     = useState(false)
+  const [addOpen, setAddOpen]       = useState(false)
   const [archiveTarget, setArchiveTarget] = useState<PractitionerActiveLink | null>(null)
   const [menuOpenFor, setMenuOpenFor] = useState<string | null>(null)
 
@@ -90,6 +92,13 @@ export default function AthletesPage() {
               Archived · {archivedLinks.length}
             </RouterLink>
           )}
+          <button
+            onClick={() => setAddOpen(true)}
+            className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+          >
+            <ClipboardList size={15} />
+            Add athlete
+          </button>
           <button
             onClick={() => setLinkOpen(true)}
             className="inline-flex items-center gap-2 bg-gradient-spps text-white px-4 py-2 rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity"
@@ -167,18 +176,27 @@ export default function AthletesPage() {
             No active athletes
           </h2>
           <p className="text-sm text-gray-600 max-w-md mx-auto mb-6">
-            In v2, athletes sign up themselves at{' '}
-            <span className="font-mono text-xs bg-gray-50 px-1.5 py-0.5 rounded">/athlete/signup</span>.
-            Once they create an account, link to them by email to start messaging,
-            schedule sessions, and review their daily logs.
+            Add a new athlete with the AASP intake packet, or link an existing athlete
+            account by email. Once linked, athletes will be prompted in their portal to
+            complete confidentiality, consultation consent, parental release if needed,
+            and media release forms automatically.
           </p>
-          <button
-            onClick={() => setLinkOpen(true)}
-            className="inline-flex items-center gap-2 bg-gradient-spps text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity"
-          >
-            <UserPlus size={15} />
-            Link your first athlete
-          </button>
+          <div className="flex flex-col items-center justify-center gap-2 sm:flex-row">
+            <button
+              onClick={() => setAddOpen(true)}
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+            >
+              <ClipboardList size={15} />
+              Add athlete with intake
+            </button>
+            <button
+              onClick={() => setLinkOpen(true)}
+              className="inline-flex items-center gap-2 bg-gradient-spps text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 transition-opacity"
+            >
+              <UserPlus size={15} />
+              Link existing athlete
+            </button>
+          </div>
           {archivedLinks.length > 0 && (
             <p className="mt-6 text-xs text-gray-500">
               You have {archivedLinks.length} archived athlete
@@ -223,6 +241,20 @@ export default function AthletesPage() {
       )}
 
       {/* ── Modals ───────────────────────────────────────────────── */}
+      <AddAthleteIntakeModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onCreated={({ athleteId, portalInviteStatus, portalInviteDetail }) => {
+          setAddOpen(false)
+          navigate(`/athletes/${athleteId}/case`, {
+            state: {
+              portalInviteStatus,
+              portalInviteDetail,
+              createdFromIntake: true,
+            },
+          })
+        }}
+      />
       <LinkAthleteModal open={linkOpen} onClose={() => setLinkOpen(false)} />
       <ArchiveLinkModal
         open={archiveTarget !== null}

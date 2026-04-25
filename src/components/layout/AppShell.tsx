@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Users, Calendar, Activity, ClipboardList,
-  Lightbulb, Bot, FileText, Settings, LogOut, Menu, Brain, Heart, Globe, Shield, FlaskConical,
+  Lightbulb, Bot, FileText, Settings, LogOut, Menu, Brain, Heart, Globe, Shield, ShieldAlert, FlaskConical,
   MessageCircle, X, Star, Send, CheckCircle, Layers,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -39,6 +39,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     { label: t.nav_interventions,     href: '/interventions',       Icon: Lightbulb },
     { label: 'Programs',               href: '/programs',           Icon: Layers },
     { label: 'Chat',                   href: '/chat',               Icon: MessageCircle },
+    { label: 'Clinical',               href: '/clinical',           Icon: ShieldAlert },
     { label: 'Consent Forms',          href: '/consent',             Icon: Shield },
     { label: 'Injury Psychology',      href: '/injury',              Icon: Activity },
     { label: 'Mental Performance Lab', href: '/lab',                Icon: FlaskConical },

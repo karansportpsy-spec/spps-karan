@@ -141,7 +141,19 @@ function useCreateInjury() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (payload: Omit<InjuryRecord, 'id' | 'practitioner_id' | 'created_at'>) => {
-      const row: Record<string, any> = { ...payload, practitioner_id: user!.id }
+      const diagnosisText = payload.diagnosis_text?.trim() || 'Injury'
+      const sportContext = payload.context || 'unknown'
+      const missedDays = typeof payload.missed_days === 'number' ? Math.max(0, payload.missed_days) : 0
+      const row: Record<string, any> = {
+        ...payload,
+        practitioner_id: user!.id,
+        injury_name: diagnosisText,
+        injury_type: payload.osiics_injury_type_1 || payload.osiics_diagnosis_1 || diagnosisText,
+        body_part: payload.body_part || payload.osiics_body_part_1 || 'Unspecified',
+        sport_context: sportContext,
+        training_days_missed: missedDays,
+        psych_referral: Boolean(payload.psych_referral_needed),
+      }
       const removedColumns = new Set<string>()
       const missingColumnRegex =
         /Could not find the ['"]([^'"]+)['"] column|column ["']([^"']+)["'] of relation ["']injury_records["'] does not exist/i
@@ -158,6 +170,20 @@ function useCreateInjury() {
         const msg = error.message ?? ''
         const match = msg.match(missingColumnRegex)
         const missingColumn = match?.[1] ?? match?.[2]
+
+        if (missingColumn === 'diagnosis_text') {
+          row.injury_name = row.injury_name || diagnosisText
+        }
+        if (missingColumn === 'context') {
+          row.sport_context = row.sport_context || sportContext
+        }
+        if (missingColumn === 'missed_days') {
+          row.training_days_missed = row.training_days_missed ?? missedDays
+        }
+        if (missingColumn === 'psych_referral_needed') {
+          row.psych_referral = row.psych_referral ?? Boolean(payload.psych_referral_needed)
+        }
+
         if (missingColumn && missingColumn in row && !removedColumns.has(missingColumn)) {
           delete row[missingColumn]
           removedColumns.add(missingColumn)

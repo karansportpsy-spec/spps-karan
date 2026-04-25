@@ -6,6 +6,25 @@ import LogoBrand from '@/components/LogoBrand'
 
 type Mode = 'signin' | 'reset' | 'reset_sent'
 
+function humanizeResetError(error: unknown): string {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return 'You appear to be offline. Reconnect to the internet and try sending the reset link again.'
+  }
+
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  const lower = message.toLowerCase()
+
+  if (
+    lower.includes('failed to fetch') ||
+    lower.includes('network error') ||
+    lower.includes('network request failed')
+  ) {
+    return 'Unable to reach the password reset service right now. Check your internet connection and try again.'
+  }
+
+  return message || 'Unable to send the reset link right now.'
+}
+
 export default function AthleteLoginPage() {
   const { signIn, authError, clearError } = useAuth()
   const navigate = useNavigate()
@@ -45,7 +64,7 @@ export default function AthleteLoginPage() {
       if (error) throw error
       setMode('reset_sent')
     } catch (err) {
-      setResetErr((err as Error).message)
+      setResetErr(humanizeResetError(err))
     } finally {
       setLoading(false)
     }

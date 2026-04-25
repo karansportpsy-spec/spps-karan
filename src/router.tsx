@@ -14,7 +14,8 @@
 // Pages that query the athlete_* tables will adjust in Phase 3 onward.
 
 import React from 'react'
-import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation } from 'react-router-dom'
+import { createBrowserRouter, RouterProvider, Navigate, Outlet, useLocation, useRouteError, isRouteErrorResponse, Link } from 'react-router-dom'
+import { AlertCircle } from 'lucide-react'
 
 import { Spinner } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
@@ -24,6 +25,9 @@ import NotFoundPage from '@/pages/NotFoundPage'
 import { LoginPage, SignupPage } from '@/pages/auth/AuthPages'
 import { HIPAAPage, UserAgreementPage, TermsPage, DataPrivacyPage } from '@/pages/compliance/CompliancePages'
 import ProfileSetupPage from '@/pages/auth/ProfileSetupPage'
+import AthleteLoginPage from '@/pages/athlete/AthleteLoginPage'
+import AthleteSignupPage from '@/pages/athlete/AthleteSignupPage'
+import AthletePortalPage from '@/pages/athlete/AthletePortalPage'
 
 const DashboardPage            = React.lazy(() => import('@/pages/Dashboard'))
 const AthletesPage             = React.lazy(() => import('@/pages/athletes/AthletesPage'))
@@ -45,10 +49,8 @@ const AIAssistantPage          = React.lazy(() => import('@/pages/ai/AIAssistant
 const ReportsPage              = React.lazy(() => import('@/pages/reports/ReportsPage'))
 const SettingsPage             = React.lazy(() => import('@/pages/settings/SettingsPage'))
 const ChatPage                 = React.lazy(() => import('@/pages/chat/ChatPage'))
+const ClinicalPage             = React.lazy(() => import('@/pages/clinical/ClinicalPage'))
 
-const AthleteLoginPage        = React.lazy(() => import('@/pages/athlete/AthleteLoginPage'))
-const AthleteSignupPage       = React.lazy(() => import('@/pages/athlete/AthleteSignupPage'))
-const AthletePortalPage       = React.lazy(() => import('@/pages/athlete/AthletePortalPage'))
 const AcceptInvitePage        = React.lazy(() => import('@/pages/athletes/AcceptInvitePage'))
 const AthleteDashboard        = React.lazy(() => import('@/pages/athletes/AthleteDashboard'))
 const AthleteMessagesPage     = React.lazy(() => import('@/pages/athletes/AthleteMessagesPage'))
@@ -78,6 +80,47 @@ function routeElement(page: React.ReactElement, message = 'Loading page...') {
     <React.Suspense fallback={<LoadingScreen message={message} />}>
       {page}
     </React.Suspense>
+  )
+}
+
+function AthleteRouteErrorBoundary() {
+  const error = useRouteError()
+  const message = isRouteErrorResponse(error)
+    ? error.statusText || `Request failed with status ${error.status}`
+    : error instanceof Error
+      ? error.message
+      : 'Something went wrong while loading the athlete portal.'
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#eef9f7] to-[#f4fbf7] p-6">
+      <div className="w-full max-w-lg rounded-3xl border border-red-100 bg-white p-8 shadow-xl">
+        <div className="mb-4 inline-flex rounded-2xl bg-red-50 p-3 text-red-600">
+          <AlertCircle size={22} />
+        </div>
+        <h1 className="text-2xl font-bold text-gray-900">Athlete portal hit an unexpected issue</h1>
+        <p className="mt-2 text-sm text-gray-600">
+          We kept the app from crashing completely, but this page needs a refresh or a fresh sign-in.
+        </p>
+        <div className="mt-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {message}
+        </div>
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="inline-flex flex-1 items-center justify-center rounded-2xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white hover:bg-teal-700"
+          >
+            Reload athlete portal
+          </button>
+          <Link
+            to="/athlete/login"
+            className="inline-flex flex-1 items-center justify-center rounded-2xl border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            Go to athlete sign in
+          </Link>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -180,6 +223,7 @@ const router = createBrowserRouter([
       { path: '/interventions',              element: routeElement(<InterventionsPage />,     'Loading interventions...') },
       { path: '/programs',                   element: routeElement(<ProgramBuilderPage />,    'Loading programs...') },
       { path: '/chat',                       element: routeElement(<ChatPage />,              'Loading chat...') },
+      { path: '/clinical',                   element: routeElement(<ClinicalPage />,          'Loading clinical module...') },
       { path: '/consent',                    element: routeElement(<ConsentFormsPage />,      'Loading consent forms...') },
       { path: '/injury',                     element: routeElement(<InjuryPsychologyPage />,  'Loading injury psychology...') },
       { path: '/lab',                        element: routeElement(<MentalPerformanceLabPage />, 'Loading lab tools...') },
@@ -193,6 +237,7 @@ const router = createBrowserRouter([
   // Athlete authenticated surface
   {
     element: <RequireAthlete />,
+    errorElement: <AthleteRouteErrorBoundary />,
     children: [
       { path: '/athlete/dashboard',           element: routeElement(<AthleteDashboard />,        'Loading athlete dashboard...') },
       { path: '/athlete/practitioners',       element: routeElement(<MyPractitionersPage />,     'Loading practitioners...') },

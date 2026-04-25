@@ -5,6 +5,7 @@ import { pool } from '../db.js';
 import { requireRoles } from '../middleware/auth.js';
 import { buildConversationKey, normalizePagination } from '../utils/helpers.js';
 import { assertMessagePeerAccess, persistMessage } from '../services.js';
+import { chargeMessageTokens } from '../services/billing.js';
 
 const messageSendSchema = z.object({
   receiverId: z.string().uuid(),
@@ -69,6 +70,41 @@ export function registerMessageRoutes(app, io) {
       });
       if (!isAllowed) {
         return res.status(403).json({ message: 'Messaging is not permitted for this peer.' });
+      }
+
+      if (req.user.role === 'athlete' && payload.receiverRole === 'practitioner') {
+        let relationshipId = null;
+        try {
+          const relationshipRes = await pool.query(
+            `select id
+             from practitioner_athlete_relationships
+             where practitioner_user_id = $1
+               and athlete_user_id = $2
+               and status = 'active'
+             limit 1`,
+            [payload.receiverId, req.user.id]
+          );
+          relationshipId = relationshipRes.rows[0]?.id || null;
+        } catch (error) {
+          if (!(error && typeof error === 'object' && error.code === '42P01')) {
+            throw error;
+          }
+        }
+
+        try {
+          await chargeMessageTokens({
+            athleteUserId: req.user.id,
+            practitionerUserId: payload.receiverId,
+            relationshipId,
+            metadata: {
+              receiverRole: payload.receiverRole,
+            },
+          });
+        } catch (error) {
+          return res.status(402).json({
+            message: error instanceof Error ? error.message : 'Insufficient tokens for messaging.',
+          });
+        }
       }
 
       const message = await persistMessage({

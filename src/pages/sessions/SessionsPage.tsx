@@ -40,6 +40,7 @@ export default function SessionsPage() {
   const { data: pendingCount = 0 } = usePendingRequestCount()
   const [editing, setEditing] = useState<Session | null>(null)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
   const [showRecorder, setShowRecorder] = useState(false)
   const [recorderExpanded, setRecorderExpanded] = useState(true)
   const [form, setForm] = useState({
@@ -53,6 +54,7 @@ export default function SessionsPage() {
 
   function openCreate() {
     setEditing(null)
+    setSaveError('')
     setForm({
       athlete_id: '', session_type: 'individual', status: 'scheduled',
       scheduled_at: new Date().toISOString().slice(0, 16),
@@ -64,6 +66,7 @@ export default function SessionsPage() {
 
   function openEdit(s: Session) {
     setEditing(s)
+    setSaveError('')
     setForm({
       athlete_id: s.athlete_id, session_type: s.session_type, status: s.status,
       scheduled_at: s.scheduled_at.slice(0, 16), duration_minutes: s.duration_minutes,
@@ -88,12 +91,15 @@ export default function SessionsPage() {
 
   async function handleSave() {
     setSaving(true)
+    setSaveError('')
     try {
       const payload = { ...form, scheduled_at: new Date(form.scheduled_at).toISOString() } as any
       if (editing) await updateSession.mutateAsync({ id: editing.id, ...payload })
       else await createSession.mutateAsync(payload)
       setModalOpen(false)
       setShowRecorder(false)
+    } catch (error: any) {
+      setSaveError(error?.message ?? 'Failed to save session.')
     } finally {
       setSaving(false)
     }
@@ -297,6 +303,7 @@ export default function SessionsPage() {
 
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => { setModalOpen(false); setShowRecorder(false) }}>{t.cancel}</Button>
+            {saveError ? <p className="text-xs text-red-600 flex-1 flex items-center">{saveError}</p> : null}
             <Button onClick={handleSave} loading={saving} disabled={!form.athlete_id}>{t.save} Session</Button>
           </div>
         </div>

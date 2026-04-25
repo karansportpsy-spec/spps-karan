@@ -8,12 +8,25 @@ export function getErrorMessage(error: unknown): string {
   return '';
 }
 
+export function isMissingRpcError(error: unknown): boolean {
+  const message = getErrorMessage(error).toLowerCase();
+  if (!message) return false;
+
+  if (message.includes('could not find the function')) return true;
+  if (message.includes('schema cache')) return true;
+  if (message.includes('function public.') && message.includes('does not exist')) return true;
+
+  return false;
+}
+
 export function shouldFallbackToDirectDb(error: unknown): boolean {
   const message = getErrorMessage(error).toLowerCase();
   if (!message) return false;
 
   if (message.includes('failed to fetch')) return true;
+  if (message.includes('network request failed')) return true;
   if (message.includes('networkerror')) return true;
+  if (isMissingRpcError(error)) return true;
 
   return /(request failed with status|status)\s*(404|405|500|502|503|504)\b/i.test(message);
 }
@@ -26,4 +39,3 @@ export function isMissingRelationError(error: unknown): boolean {
   const message = getErrorMessage(error).toLowerCase();
   return message.includes('relation') && message.includes('does not exist');
 }
-

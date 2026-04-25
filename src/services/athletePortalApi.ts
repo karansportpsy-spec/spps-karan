@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { clearAthleteAccessToken, setAthleteAccessToken } from '@/lib/apiClient';
+import { shouldFallbackToDirectDb } from '@/lib/apiFallback';
 import type { AthleteProfile } from '@/contexts/AuthContext';
 import type { PortalSummary } from '@/contexts/PortalContext';
 
@@ -50,21 +51,41 @@ async function fetchAthleteProfile(userId: string): Promise<AthleteProfile> {
     .eq('id', userId)
     .maybeSingle();
 
-  if (error) {
-    console.error('[SPPS Athlete Portal] profile fetch failed:', error.message);
-    throw error;
+  if (data) {
+    return data as AthleteProfile;
   }
 
-  if (!data) {
+  if (error) {
+    console.error('[SPPS Athlete Portal] profile fetch by id failed:', error.message);
+  }
+
+  const { data: legacyData, error: legacyError } = await supabase
+    .from('athletes')
+    .select('*')
+    .eq('portal_user_id', userId)
+    .maybeSingle();
+
+  if (legacyError) {
+    if (legacyError.code !== '42703') {
+      console.error('[SPPS Athlete Portal] profile fetch by portal_user_id failed:', legacyError.message);
+      throw legacyError;
+    }
+  }
+
+  if (!legacyData) {
     throw new Error('Signed in, but no athlete profile exists for this account.');
   }
 
-  return data as AthleteProfile;
+  return legacyData as AthleteProfile;
 }
 
 export async function fetchAthletePortalSummary(): Promise<PortalSummary | null> {
   const { data, error } = await supabase.rpc('athlete_portal_summary');
   if (error) {
+    if (shouldFallbackToDirectDb(error)) {
+      console.warn('[SPPS Athlete Portal] summary RPC unavailable, continuing without summary:', error.message);
+      return null;
+    }
     console.error('[SPPS Athlete Portal] summary fetch failed:', error.message);
     throw error;
   }

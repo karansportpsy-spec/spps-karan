@@ -130,7 +130,180 @@ export async function getAthleteByAuthUserId(userId) {
      limit 1`,
     [userId]
   );
-  return result.rows[0] || null;
+  if (result.rows[0]) {
+    return result.rows[0];
+  }
+
+  try {
+    const legacyResult = await pool.query(
+      `select
+         a.id,
+         link.practitioner_id,
+         a.first_name,
+         a.last_name,
+         a.email,
+         a.sport,
+         a.team,
+         a.is_portal_activated
+       from athletes a
+       left join lateral (
+         select practitioner_id
+         from practitioner_athlete_links
+         where athlete_id = a.id
+           and status = 'active'
+         order by linked_at desc
+         limit 1
+       ) link on true
+       where a.portal_user_id = $1
+       limit 1`,
+      [userId]
+    );
+
+    if (legacyResult.rows[0]) {
+      return legacyResult.rows[0];
+    }
+  } catch (err) {
+    if (err && typeof err === 'object' && err.code === '42703') {
+      // Older schemas may not have portal_user_id yet; continue to self-heal below.
+    } else {
+      throw err;
+    }
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (error || !data?.user) {
+      return null;
+    }
+    return ensureAthleteForAuthUser(data.user);
+  } catch (err) {
+    console.error('[SPPS API] getAthleteByAuthUserId provision failed:', err);
+    return null;
+  }
+}
+
+export async function ensurePractitionerForAuthUser(user) {
+  if (!user) return null;
+
+  const existingById = await pool.query(
+    `select *
+     from practitioners
+     where id = $1
+     limit 1`,
+    [user.id]
+  );
+
+  if (existingById.rowCount > 0) {
+    return existingById.rows[0];
+  }
+
+  if (user.email) {
+    const existingByEmail = await pool.query(
+      `select *
+       from practitioners
+       where lower(email) = lower($1)
+       limit 1`,
+      [user.email]
+    );
+
+    if (existingByEmail.rowCount > 0) {
+      return existingByEmail.rows[0];
+    }
+  }
+
+  const firstName = String(user.user_metadata?.first_name || '').trim();
+  const lastName = String(user.user_metadata?.last_name || '').trim();
+  const practitionerRole = String(user.user_metadata?.practitioner_role || '').trim()
+    || String(user.user_metadata?.role || '').trim()
+    || 'sport_psychologist';
+
+  const insertResult = await pool.query(
+    `insert into practitioners(
+       id,
+       email,
+       first_name,
+       last_name,
+       role,
+       hipaa_acknowledged,
+       compliance_completed,
+       notification_email,
+       notification_sms
+     )
+     values ($1, $2, $3, $4, $5, false, false, true, false)
+     returning *`,
+    [
+      user.id,
+      user.email || '',
+      firstName || 'Practitioner',
+      lastName || '',
+      practitionerRole === 'practitioner' ? 'sport_psychologist' : practitionerRole,
+    ]
+  );
+
+  return insertResult.rows[0] || null;
+}
+
+export async function ensureAthleteForAuthUser(user) {
+  if (!user) return null;
+
+  const firstName = String(user.user_metadata?.first_name || '').trim();
+  const lastName = String(user.user_metadata?.last_name || '').trim();
+  const sport = String(user.user_metadata?.sport || '').trim();
+  const practitionerId = String(user.user_metadata?.practitioner_id || '').trim() || null;
+  const athleteId = String(user.user_metadata?.athlete_id || '').trim() || null;
+
+  if (athleteId) {
+    const updateById = await pool.query(
+      `update athletes
+       set portal_user_id = $1,
+           email = coalesce(email, $2),
+           practitioner_id = coalesce(practitioner_id, $3),
+           is_portal_activated = true,
+           updated_at = now()
+       where id = $4
+       returning id, practitioner_id, first_name, last_name, email, sport, team, is_portal_activated`,
+      [user.id, user.email || null, practitionerId, athleteId]
+    );
+    if (updateById.rowCount > 0) {
+      return updateById.rows[0];
+    }
+  }
+
+  if (user.email) {
+    const updateByEmail = await pool.query(
+      `update athletes
+       set portal_user_id = $1,
+           practitioner_id = coalesce(practitioner_id, $2),
+           is_portal_activated = true,
+           updated_at = now()
+       where lower(email) = lower($3)
+       returning id, practitioner_id, first_name, last_name, email, sport, team, is_portal_activated`,
+      [user.id, practitionerId, user.email]
+    );
+    if (updateByEmail.rowCount > 0) {
+      return updateByEmail.rows[0];
+    }
+  }
+
+  const insertResult = await pool.query(
+    `insert into athletes(
+       practitioner_id, first_name, last_name, email, sport,
+       status, is_portal_activated, portal_user_id
+     )
+     values ($1, $2, $3, $4, $5, $6, true, $7)
+     returning id, practitioner_id, first_name, last_name, email, sport, team, is_portal_activated`,
+    [
+      practitionerId,
+      firstName || 'Athlete',
+      lastName || '',
+      user.email || null,
+      sport,
+      practitionerId ? 'linked' : 'unverified',
+      user.id,
+    ]
+  );
+
+  return insertResult.rows[0] || null;
 }
 
 export async function assertAthleteAccess(req, athleteId) {

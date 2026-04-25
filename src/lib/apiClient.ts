@@ -18,6 +18,7 @@ function resolveApiBaseUrl() {
 
 export const API_BASE_URL = resolveApiBaseUrl();
 const ATHLETE_TOKEN_KEY = 'spps-athlete-access-token';
+const CLINICAL_ACCESS_KEY = 'spps-clinical-access';
 
 export function setAthleteAccessToken(token: string) {
   localStorage.setItem(ATHLETE_TOKEN_KEY, token);
@@ -29,6 +30,32 @@ export function clearAthleteAccessToken() {
 
 export function getAthleteAccessToken() {
   return localStorage.getItem(ATHLETE_TOKEN_KEY);
+}
+
+export function setClinicalAccessSession(session: { token: string; expiresAt: number }) {
+  sessionStorage.setItem(CLINICAL_ACCESS_KEY, JSON.stringify(session));
+}
+
+export function getClinicalAccessSession(): { token: string; expiresAt: number } | null {
+  const raw = sessionStorage.getItem(CLINICAL_ACCESS_KEY);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as { token?: string; expiresAt?: number };
+    if (!parsed?.token || !parsed?.expiresAt) return null;
+    if (parsed.expiresAt <= Date.now()) {
+      clearClinicalAccessSession();
+      return null;
+    }
+    return { token: parsed.token, expiresAt: parsed.expiresAt };
+  } catch {
+    clearClinicalAccessSession();
+    return null;
+  }
+}
+
+export function clearClinicalAccessSession() {
+  sessionStorage.removeItem(CLINICAL_ACCESS_KEY);
 }
 
 export async function getAuthToken(preferAthleteToken = false): Promise<string | null> {
@@ -44,7 +71,7 @@ export async function getAuthToken(preferAthleteToken = false): Promise<string |
 
 export async function apiFetch(
   path: string,
-  init: RequestInit & { preferAthleteToken?: boolean; noAuth?: boolean } = {}
+  init: RequestInit & { preferAthleteToken?: boolean; noAuth?: boolean; clinicalAuth?: boolean } = {}
 ): Promise<Response> {
   const headers = new Headers(init.headers || {});
   headers.set('Content-Type', headers.get('Content-Type') || 'application/json');
@@ -56,6 +83,13 @@ export async function apiFetch(
     }
   }
 
+  if (init.clinicalAuth) {
+    const clinicalSession = getClinicalAccessSession();
+    if (clinicalSession?.token) {
+      headers.set('X-Clinical-Access-Token', clinicalSession.token);
+    }
+  }
+
   return fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers,
@@ -64,7 +98,7 @@ export async function apiFetch(
 
 export async function apiJson<T>(
   path: string,
-  init: RequestInit & { preferAthleteToken?: boolean; noAuth?: boolean } = {}
+  init: RequestInit & { preferAthleteToken?: boolean; noAuth?: boolean; clinicalAuth?: boolean } = {}
 ): Promise<T> {
   let res: Response;
   try {

@@ -18,15 +18,28 @@ import {
   CheckCircle2, UserX, Info,
 } from 'lucide-react'
 import AthletePortalShell from '@/components/athlete/AthletePortalShell'
+import AthleteOnboardingModal from '@/components/athlete/AthleteOnboardingModal'
 import { usePortal, type ActiveLink } from '@/contexts/PortalContext'
 import { useAuth } from '@/contexts/AuthContext'
 
 export default function AthleteDashboard() {
   const { athlete } = useAuth()
   const { summary, isLoading, isError, error, refresh, activeLinks, archivedLinks } = usePortal()
+  const athleteSummary = summary?.athlete ?? {
+    id: athlete?.id ?? '',
+    email: athlete?.email ?? '',
+    first_name: athlete?.first_name ?? '',
+    last_name: athlete?.last_name ?? '',
+    status: activeLinks.length > 0 ? 'linked' as const : archivedLinks.length > 0 ? 'discontinued' as const : 'unverified' as const,
+    uid_code: athlete?.uid_code ?? null,
+    sport: athlete?.sport ?? null,
+    timezone: 'UTC',
+    language: 'en',
+  }
 
   return (
     <AthletePortalShell>
+      <AthleteOnboardingModal hasActivePractitioners={activeLinks.length > 0} />
       {/* ── Welcome header ─────────────────────────────────────────── */}
       <section className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-1">
@@ -73,11 +86,11 @@ export default function AthleteDashboard() {
       {summary && (
         <>
           {/* Status card — varies by athlete.status */}
-          {summary.athlete.status === 'unverified' && (
-            <UnverifiedCard email={summary.athlete.email} />
+          {athleteSummary.status === 'unverified' && (
+            <UnverifiedCard email={athleteSummary.email} />
           )}
 
-          {summary.athlete.status === 'discontinued' && activeLinks.length === 0 && (
+          {athleteSummary.status === 'discontinued' && activeLinks.length === 0 && (
             <DiscontinuedCard />
           )}
 

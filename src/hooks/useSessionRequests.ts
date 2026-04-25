@@ -7,12 +7,12 @@ import type { AthleteSessionRequest } from '@/types/sync'
 
 // ── Practitioner: all requests across their athletes ──────────────────────────
 export function usePractitionerSessionRequests(statusFilter?: string[]) {
-  const { user } = useAuth()
+  const { user, role } = useAuth()
   const qc = useQueryClient()
 
   const query = useQuery<AthleteSessionRequest[]>({
     queryKey: ['practitioner_session_requests', user?.id, statusFilter],
-    enabled: !!user && user.user_metadata?.role !== 'athlete',
+    enabled: !!user && role === 'practitioner',
     staleTime: 0,
     queryFn: async () => {
       let q = supabase
@@ -49,10 +49,10 @@ export function usePractitionerSessionRequests(statusFilter?: string[]) {
 
 // ── Practitioner: pending count for badge ────────────────────────────────────
 export function usePendingRequestCount() {
-  const { user } = useAuth()
+  const { user, role } = useAuth()
   return useQuery<number>({
     queryKey: ['pending_request_count', user?.id],
-    enabled: !!user && user.user_metadata?.role !== 'athlete',
+    enabled: !!user && role === 'practitioner',
     staleTime: 0,
     queryFn: async () => {
       const { count, error } = await supabase
@@ -154,6 +154,7 @@ export function useAthleteRequests(athleteAuthId?: string) {
       const { data, error } = await supabase
         .from('athlete_session_requests')
         .select('*')
+        .eq('athlete_auth_id', athleteAuthId!)
         .order('created_at', { ascending: false })
         .limit(20)
       if (error) throw error

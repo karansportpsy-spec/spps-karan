@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Download, Printer, ArrowLeft, AlertTriangle, Activity, Brain,
@@ -1165,6 +1165,7 @@ ${context}`,
 export default function CaseFormulationPage() {
   const { athleteId } = useParams<{ athleteId: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
   const queryClient = useQueryClient()
 
@@ -1194,6 +1195,11 @@ export default function CaseFormulationPage() {
   const athlete = athletes.find(a => a.id === athleteId)
   const dailySummary = dailySummaryPayload?.dailySummary
   const loading = loadS || loadC || loadA || loadI || loadR || loadD
+  const redirectState = (location.state ?? {}) as {
+    portalInviteStatus?: string | null
+    portalInviteDetail?: string | null
+    createdFromIntake?: boolean
+  }
 
   async function handlePortalActivationToggle() {
     if (!athlete?.id) return
@@ -2072,6 +2078,22 @@ export default function CaseFormulationPage() {
 
   return (
     <AppShell>
+      {redirectState.createdFromIntake && (
+        <div className={`mb-4 rounded-2xl border px-4 py-3 text-sm ${
+          redirectState.portalInviteStatus === 'queued_local' || redirectState.portalInviteStatus === 'backend_unavailable'
+            ? 'border-amber-200 bg-amber-50 text-amber-800'
+            : 'border-green-200 bg-green-50 text-green-800'
+        }`}>
+          <p className="font-semibold">
+            {redirectState.portalInviteStatus === 'queued_local' || redirectState.portalInviteStatus === 'backend_unavailable'
+              ? 'Athlete created. Portal invite is queued until the backend email service is available.'
+              : 'Athlete created successfully.'}
+          </p>
+          {redirectState.portalInviteDetail && (
+            <p className="mt-1 text-xs">{redirectState.portalInviteDetail}</p>
+          )}
+        </div>
+      )}
       {/* Top bar */}
       <div className="flex items-center justify-between mb-6 print:hidden">
         <button
