@@ -115,9 +115,11 @@ export function registerMessageRoutes(app, io) {
         body: payload.body.trim(),
       });
 
-      const senderRoom = `user:${req.user.role}:${req.user.id}`;
-      const receiverRoom = `user:${payload.receiverRole}:${payload.receiverId}`;
-      io.to(senderRoom).to(receiverRoom).emit('chat:new', message);
+      if (io) {
+        const senderRoom = `user:${req.user.role}:${req.user.id}`;
+        const receiverRoom = `user:${payload.receiverRole}:${payload.receiverId}`;
+        io.to(senderRoom).to(receiverRoom).emit('chat:new', message);
+      }
 
       res.status(201).json(message);
     } catch (err) {
@@ -126,6 +128,41 @@ export function registerMessageRoutes(app, io) {
       }
       console.error('[SPPS API] message send failed:', err);
       res.status(500).json({ message: 'Failed to send message.' });
+    }
+  });
+
+  app.post(`${env.apiBasePath}/messages/mark-read`, requireRoles('practitioner', 'athlete', 'admin'), async (req, res) => {
+    try {
+      const { peerId, peerRole } = messagePeerSchema.parse(req.body);
+
+      const isAllowed = await assertMessagePeerAccess({
+        senderId: req.user.id,
+        senderRole: req.user.role,
+        receiverId: peerId,
+        receiverRole: peerRole,
+      });
+      if (!isAllowed) {
+        return res.status(403).json({ message: 'No access to this conversation.' });
+      }
+
+      const conversationKey = buildConversationKey(req.user.role, req.user.id, peerRole, peerId);
+      const result = await pool.query(
+        `update messages
+         set is_read = true,
+             read_at = now()
+         where conversation_key = $1
+           and receiver_id = $2
+           and is_read = false`,
+        [conversationKey, req.user.id]
+      );
+
+      res.json({ updated: result.rowCount ?? 0 });
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Invalid mark-read payload.', issues: err.issues });
+      }
+      console.error('[SPPS API] mark-read failed:', err);
+      res.status(500).json({ message: 'Failed to mark messages as read.' });
     }
   });
 }

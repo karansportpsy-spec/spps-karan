@@ -1,15 +1,6 @@
-import {
-  apiJson,
-  clearClinicalAccessSession,
-  getClinicalAccessSession,
-  setClinicalAccessSession,
-} from '@/lib/apiClient'
+import { apiJson } from '@/lib/apiClient'
 import { getErrorMessage, shouldFallbackToDirectDb } from '@/lib/apiFallback'
 import { supabase } from '@/lib/supabase'
-
-const LOCAL_CLINICAL_HASH_KEY = 'spps-clinical-local-password-hash'
-const LOCAL_CLINICAL_UPDATED_AT_KEY = 'spps-clinical-local-password-updated-at'
-const LOCAL_CLINICAL_SESSION_MINUTES = 30
 
 export interface ClinicalRecord {
   id: string
@@ -105,54 +96,6 @@ type ClinicalRow = {
       }>
 }
 
-function getLocalClinicalHash() {
-  return localStorage.getItem(LOCAL_CLINICAL_HASH_KEY)
-}
-
-function setLocalClinicalHash(hash: string) {
-  localStorage.setItem(LOCAL_CLINICAL_HASH_KEY, hash)
-  localStorage.setItem(LOCAL_CLINICAL_UPDATED_AT_KEY, new Date().toISOString())
-}
-
-function getLocalClinicalUpdatedAt() {
-  return localStorage.getItem(LOCAL_CLINICAL_UPDATED_AT_KEY)
-}
-
-async function hashClinicalPassword(password: string) {
-  const trimmed = password.trim()
-  if (!trimmed) {
-    throw new Error('Clinical access password is required.')
-  }
-
-  const bytes = new TextEncoder().encode(trimmed)
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return Array.from(new Uint8Array(digest))
-    .map((value) => value.toString(16).padStart(2, '0'))
-    .join('')
-}
-
-function getLocalClinicalStatus(): ClinicalAccessStatus {
-  return {
-    configured: Boolean(getLocalClinicalHash()),
-    source: 'local',
-    selfManaged: true,
-    storageReady: true,
-    updatedAt: getLocalClinicalUpdatedAt(),
-  }
-}
-
-async function getPractitionerUserId() {
-  const { data } = await supabase.auth.getUser()
-  return data.user?.id ?? null
-}
-
-function requireClinicalSessionForLocalMode() {
-  const session = getClinicalAccessSession()
-  if (!session?.token || session.expiresAt <= Date.now()) {
-    throw new Error('Clinical access is locked. Enter the clinical access password again.')
-  }
-}
-
 function mapClinicalRecordRow(row: ClinicalRow): ClinicalRecord {
   const athlete = Array.isArray(row.athlete) ? row.athlete[0] : row.athlete
 
@@ -178,12 +121,16 @@ function mapClinicalRecordRow(row: ClinicalRow): ClinicalRecord {
   }
 }
 
+async function getPractitionerUserId() {
+  const { data } = await supabase.auth.getUser()
+  return data.user?.id ?? null
+}
+
 async function listClinicalRecordsDirect(filters: {
   athleteId?: string
   status?: 'active' | 'archived' | ''
   search?: string
 }) {
-  requireClinicalSessionForLocalMode()
   const practitionerId = await getPractitionerUserId()
   if (!practitionerId) {
     throw new Error('You must be signed in as a practitioner to view clinical records.')
@@ -210,11 +157,10 @@ async function listClinicalRecordsDirect(filters: {
 
   const { data, error } = await query
   if (error) throw error
-  return (data ?? []).map((row) => mapClinicalRecordRow(row as ClinicalRow))
+  return (data ?? []).map(row => mapClinicalRecordRow(row as ClinicalRow))
 }
 
 async function createClinicalRecordDirect(payload: ClinicalRecordPayload) {
-  requireClinicalSessionForLocalMode()
   const practitionerId = await getPractitionerUserId()
   if (!practitionerId) {
     throw new Error('You must be signed in as a practitioner to create a clinical record.')
@@ -242,7 +188,6 @@ async function createClinicalRecordDirect(payload: ClinicalRecordPayload) {
 }
 
 async function updateClinicalRecordDirect(recordId: string, payload: Partial<ClinicalRecordPayload>) {
-  requireClinicalSessionForLocalMode()
   const row: Record<string, unknown> = {}
 
   if (payload.athleteId) row.athlete_id = payload.athleteId
@@ -271,7 +216,6 @@ async function archiveClinicalRecordDirect(recordId: string) {
 }
 
 async function searchClinicalIcdDirect(query: string) {
-  requireClinicalSessionForLocalMode()
   let builder = supabase
     .from('clinical_icd_reference')
     .select('code, title, category')
@@ -288,94 +232,37 @@ async function searchClinicalIcdDirect(query: string) {
   return (data ?? []) as ClinicalIcdOption[]
 }
 
-export async function unlockClinicalAccess(password: string) {
-  try {
-    const response = await apiJson<{ token: string; expiresAt: number; sessionMinutes: number }>(
-      '/api/clinical/access/verify',
-      {
-        method: 'POST',
-        body: JSON.stringify({ password }),
-      }
-    )
-
-    setClinicalAccessSession({
-      token: response.token,
-      expiresAt: response.expiresAt,
-    })
-
-    return response
-  } catch (error) {
-    if (!shouldFallbackToDirectDb(error)) {
-      throw error
-    }
-
-    const storedHash = getLocalClinicalHash()
-    if (!storedHash) {
-      throw new Error('Create a clinical access password on this device before unlocking the module.')
-    }
-
-    const providedHash = await hashClinicalPassword(password)
-    if (providedHash !== storedHash) {
-      throw new Error('Incorrect clinical access password.')
-    }
-
-    const expiresAt = Date.now() + LOCAL_CLINICAL_SESSION_MINUTES * 60 * 1000
-    const token = `local-clinical-${expiresAt}`
-    setClinicalAccessSession({ token, expiresAt })
-    return { token, expiresAt, sessionMinutes: LOCAL_CLINICAL_SESSION_MINUTES }
+export async function unlockClinicalAccess() {
+  return {
+    token: 'practitioner-session',
+    expiresAt: Date.now() + 30 * 60 * 1000,
+    sessionMinutes: 30,
   }
 }
 
-export async function getClinicalAccessStatus() {
-  try {
-    return await apiJson<ClinicalAccessStatus>('/api/clinical/access/status')
-  } catch (error) {
-    if (!shouldFallbackToDirectDb(error)) {
-      throw error
-    }
-
-    return getLocalClinicalStatus()
+export async function getClinicalAccessStatus(): Promise<ClinicalAccessStatus> {
+  return {
+    configured: true,
+    source: 'database',
+    selfManaged: false,
+    storageReady: true,
+    updatedAt: null,
   }
 }
 
-export async function setupClinicalAccessPassword(password: string, currentPassword?: string) {
-  try {
-    return await apiJson<ClinicalAccessStatus>('/api/clinical/access/setup', {
-      method: 'POST',
-      body: JSON.stringify({
-        password,
-        currentPassword,
-      }),
-    })
-  } catch (error) {
-    if (!shouldFallbackToDirectDb(error)) {
-      throw error
-    }
-
-    const existingHash = getLocalClinicalHash()
-    if (existingHash) {
-      if (!currentPassword?.trim()) {
-        throw new Error('Enter your current clinical access password to replace it.')
-      }
-
-      const currentHash = await hashClinicalPassword(currentPassword)
-      if (currentHash !== existingHash) {
-        throw new Error('Current clinical access password is incorrect.')
-      }
-    }
-
-    const nextHash = await hashClinicalPassword(password)
-    setLocalClinicalHash(nextHash)
-    return getLocalClinicalStatus()
-  }
+export async function setupClinicalAccessPassword() {
+  return getClinicalAccessStatus()
 }
 
 export function getClinicalSession() {
-  return getClinicalAccessSession()
+  return {
+    token: 'practitioner-session',
+    expiresAt: Date.now() + 30 * 60 * 1000,
+  }
 }
 
 export function lockClinicalAccess() {
-  clearClinicalAccessSession()
+  return undefined
 }
 
 export async function listClinicalRecords(filters: {
@@ -390,9 +277,7 @@ export async function listClinicalRecords(filters: {
   const suffix = qs.toString() ? `?${qs.toString()}` : ''
 
   try {
-    return await apiJson<ClinicalRecord[]>(`/api/clinical/records${suffix}`, {
-      clinicalAuth: true,
-    })
+    return await apiJson<ClinicalRecord[]>(`/api/clinical/records${suffix}`)
   } catch (error) {
     if (!shouldFallbackToDirectDb(error)) {
       throw error
@@ -406,7 +291,6 @@ export async function createClinicalRecord(payload: ClinicalRecordPayload) {
   try {
     return await apiJson<ClinicalRecord>('/api/clinical/records', {
       method: 'POST',
-      clinicalAuth: true,
       body: JSON.stringify(payload),
     })
   } catch (error) {
@@ -422,7 +306,6 @@ export async function updateClinicalRecord(recordId: string, payload: Partial<Cl
   try {
     return await apiJson<ClinicalRecord>(`/api/clinical/records/${recordId}`, {
       method: 'PATCH',
-      clinicalAuth: true,
       body: JSON.stringify(payload),
     })
   } catch (error) {
@@ -438,7 +321,6 @@ export async function archiveClinicalRecord(recordId: string) {
   try {
     return await apiJson<ClinicalRecord>(`/api/clinical/records/${recordId}/archive`, {
       method: 'POST',
-      clinicalAuth: true,
     })
   } catch (error) {
     if (!shouldFallbackToDirectDb(error)) {
@@ -454,9 +336,7 @@ export async function searchClinicalIcd(query: string) {
   if (query.trim()) qs.set('q', query.trim())
 
   try {
-    return await apiJson<ClinicalIcdOption[]>(`/api/clinical/icd-search?${qs.toString()}`, {
-      clinicalAuth: true,
-    })
+    return await apiJson<ClinicalIcdOption[]>(`/api/clinical/icd-search?${qs.toString()}`)
   } catch (error) {
     if (!shouldFallbackToDirectDb(error)) {
       throw error
@@ -493,8 +373,8 @@ export async function getClinicalOwnerAnalytics() {
     if (usageError) throw usageError
 
     const totalDiagnoses = totalsRows?.length ?? 0
-    const activeRecords = totalsRows?.filter((row) => row.status === 'active').length ?? 0
-    const archivedRecords = totalsRows?.filter((row) => row.status === 'archived').length ?? 0
+    const activeRecords = totalsRows?.filter(row => row.status === 'active').length ?? 0
+    const archivedRecords = totalsRows?.filter(row => row.status === 'archived').length ?? 0
 
     return {
       totals: {
@@ -506,4 +386,8 @@ export async function getClinicalOwnerAnalytics() {
       trends: (trendRows ?? []) as ClinicalOwnerAnalytics['trends'],
     }
   }
+}
+
+export function explainClinicalApiError(error: unknown) {
+  return getErrorMessage(error) ?? 'Clinical request failed.'
 }

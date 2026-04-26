@@ -33,10 +33,5 @@ export const env = {
   smtpPass: process.env.SMTP_PASS || '',
   smtpFrom: process.env.SMTP_FROM || 'SPPS <no-reply@spps.local>',
   enableActivationEmail: String(process.env.ENABLE_ACTIVATION_EMAIL || 'true') === 'true',
-  clinicalAccessPasswordHash: process.env.CLINICAL_ACCESS_PASSWORD_HASH || '',
-  clinicalAccessTokenSecret: process.env.CLINICAL_ACCESS_TOKEN_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY,
   clinicalAuditSalt: process.env.CLINICAL_AUDIT_SALT || process.env.SUPABASE_SERVICE_ROLE_KEY,
-  clinicalAccessSessionMinutes: Number(process.env.CLINICAL_ACCESS_SESSION_MINUTES || 20),
-  clinicalAccessWindowMinutes: Number(process.env.CLINICAL_ACCESS_WINDOW_MINUTES || 15),
-  clinicalAccessMaxAttempts: Number(process.env.CLINICAL_ACCESS_MAX_ATTEMPTS || 5),
 };

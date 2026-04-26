@@ -13,18 +13,22 @@
 
 import { Link } from 'react-router-dom'
 import {
-  Target, Users, MessageCircle, BookOpen, ClipboardList,
+  MessageCircle, BookOpen, ClipboardList,
   AlertCircle, Sparkles, Clock, ChevronRight, RefreshCw,
-  CheckCircle2, UserX, Info,
+  CheckCircle2, UserX, Info, Wallet, Coins,
 } from 'lucide-react'
 import AthletePortalShell from '@/components/athlete/AthletePortalShell'
 import AthleteOnboardingModal from '@/components/athlete/AthleteOnboardingModal'
 import { usePortal, type ActiveLink } from '@/contexts/PortalContext'
 import { useAuth } from '@/contexts/AuthContext'
+import { useBillingCatalog, useBillingCheckout, useWalletSummary } from '@/hooks/useBilling'
 
 export default function AthleteDashboard() {
   const { athlete } = useAuth()
   const { summary, isLoading, isError, error, refresh, activeLinks, archivedLinks } = usePortal()
+  const walletQuery = useWalletSummary(activeLinks.length > 0)
+  const billingCatalogQuery = useBillingCatalog('india')
+  const checkoutMutation = useBillingCheckout()
   const athleteSummary = summary?.athlete ?? {
     id: athlete?.id ?? '',
     email: athlete?.email ?? '',
@@ -35,6 +39,23 @@ export default function AthleteDashboard() {
     sport: athlete?.sport ?? null,
     timezone: 'UTC',
     language: 'en',
+  }
+
+  async function handleBuyTokens(productCode: string) {
+    try {
+      const result = await checkoutMutation.mutateAsync({
+        market: 'india',
+        productType: 'token_pack',
+        productCode,
+        quantity: 1,
+      })
+
+      if (result.checkoutUrl) {
+        window.open(result.checkoutUrl, '_blank', 'noopener,noreferrer')
+      }
+    } catch (checkoutError) {
+      console.error('[AthleteDashboard] token checkout failed:', checkoutError)
+    }
   }
 
   return (
@@ -169,6 +190,96 @@ export default function AthleteDashboard() {
                   label="Programs"
                   colorClass="bg-amber-50 text-amber-700 border-amber-100 hover:border-amber-200"
                 />
+              </div>
+            </section>
+          )}
+
+          {activeLinks.length > 0 && (
+            <section className="mb-6">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-gray-800">Tokens and sessions</h2>
+                <Link
+                  to="/athlete/requests"
+                  className="inline-flex items-center gap-1 text-xs font-medium text-teal-700 hover:text-teal-800"
+                >
+                  Request session <ChevronRight size={12} />
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-[280px,1fr]">
+                <div className="rounded-2xl border border-gray-200 bg-white p-4">
+                  <div className="mb-3 flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
+                      <Wallet size={18} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">Wallet balance</p>
+                      <p className="text-xs text-gray-500">Use tokens for session requests and messaging.</p>
+                    </div>
+                  </div>
+
+                  {walletQuery.isLoading ? (
+                    <p className="text-sm text-gray-500">Loading wallet...</p>
+                  ) : walletQuery.isError ? (
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                      {(walletQuery.error as Error)?.message ?? 'Could not load your wallet right now.'}
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-3xl font-bold text-gray-900">
+                        {walletQuery.data?.wallet.balance_tokens ?? 0}
+                        <span className="ml-2 text-sm font-medium text-gray-500">tokens</span>
+                      </p>
+                      <p className="mt-2 text-xs text-gray-500">
+                        {walletQuery.data?.ledger.length ?? 0} recent wallet transaction
+                        {(walletQuery.data?.ledger.length ?? 0) === 1 ? '' : 's'}
+                      </p>
+                    </>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-gray-200 bg-white p-4">
+                  <div className="mb-3 flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+                      <Coins size={18} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">Buy token packs</p>
+                      <p className="text-xs text-gray-500">Top up now and keep session booking unlocked.</p>
+                    </div>
+                  </div>
+
+                  {billingCatalogQuery.isLoading ? (
+                    <p className="text-sm text-gray-500">Loading available packs...</p>
+                  ) : billingCatalogQuery.isError ? (
+                    <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                      {(billingCatalogQuery.error as Error)?.message ?? 'Could not load token packs right now.'}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {billingCatalogQuery.data?.tokenPacks.map(pack => (
+                        <div key={pack.code} className="rounded-2xl border border-gray-200 p-4">
+                          <p className="text-sm font-semibold text-gray-900">{pack.label}</p>
+                          <p className="mt-1 text-2xl font-bold text-gray-900">{pack.tokens} tokens</p>
+                          <p className="mt-1 text-xs text-gray-500">
+                            {(pack.amountMinor / 100).toLocaleString('en-IN', {
+                              style: 'currency',
+                              currency: pack.currency,
+                            })}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => handleBuyTokens(pack.code)}
+                            disabled={checkoutMutation.isPending}
+                            className="mt-3 inline-flex w-full items-center justify-center rounded-xl bg-teal-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {checkoutMutation.isPending ? 'Preparing checkout...' : 'Buy now'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </section>
           )}

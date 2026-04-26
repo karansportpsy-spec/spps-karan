@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, Plus, BookOpen, CheckCircle, Edit2, Lock, Unlock, X } from 'lucide-react'
+import { ChevronLeft, Plus, BookOpen, CheckCircle, Lock, Unlock, X } from 'lucide-react'
 import { useAthlete } from '@/contexts/AthleteContext'
 import { supabase } from '@/lib/supabase'
 
@@ -45,7 +45,10 @@ export default function AthleteJournalPage() {
 
   function toggleTag(t: string) { setTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]) }
 
-  function usePrompt(p: string) { setContent(prev => prev ? prev + '\n\n' + p : p); setShowForm(true) }
+  function applyPrompt(prompt: string) {
+    setContent(prev => (prev ? `${prev}\n\n${prompt}` : prompt))
+    setShowForm(true)
+  }
 
   async function handleSave() {
     if (!content.trim() || !athleteProfile) return
@@ -82,12 +85,18 @@ export default function AthleteJournalPage() {
             <p className="text-sm font-bold text-purple-800 mb-2">💡 Journal Prompts</p>
             <div className="space-y-1.5">
               {PROMPTS.slice(0, 3).map(p => (
-                <button key={p} onClick={() => usePrompt(p)}
+                <button key={p} onClick={() => applyPrompt(p)}
                   className="w-full text-left text-xs bg-white hover:bg-purple-100 text-purple-700 px-3 py-2 rounded-xl border border-purple-100 transition-colors">
                   {p}
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {isLoading && !showForm && (
+          <div className="rounded-2xl border border-gray-100 bg-white px-4 py-8 text-center text-sm text-gray-500 shadow-sm">
+            Loading journal entries...
           </div>
         )}
 
@@ -153,7 +162,12 @@ export default function AthleteJournalPage() {
         )}
 
         {/* Entries list */}
-        {entries.length === 0 && !showForm ? (
+        {isLoading ? (
+          <div className="text-center py-12">
+            <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-purple-200 border-t-purple-500" />
+            <p className="text-sm text-gray-500">Loading journal entries...</p>
+          </div>
+        ) : entries.length === 0 && !showForm ? (
           <div className="text-center py-12">
             <BookOpen size={40} className="text-gray-200 mx-auto mb-3" />
             <p className="text-gray-500 font-medium">No journal entries yet</p>

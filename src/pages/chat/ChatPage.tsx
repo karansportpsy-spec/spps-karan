@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Socket } from 'socket.io-client'
 import { useQuery } from '@tanstack/react-query'
 import { MessageSquare, Send } from 'lucide-react'
 
@@ -8,9 +7,10 @@ import { PageHeader, Card, Button, Spinner, Avatar } from '@/components/ui'
 import { useAthletes } from '@/hooks/useAthletes'
 import { useAuth } from '@/contexts/AuthContext'
 import {
-  createChatSocket,
   fetchMessageHistory,
+  markMessagesRead,
   sendMessageRest,
+  subscribeToChatMessages,
   type ChatMessage,
 } from '@/services/chatApi'
 
@@ -34,7 +34,6 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [sending, setSending] = useState(false)
 
-  const socketRef = useRef<Socket | null>(null)
   const endRef = useRef<HTMLDivElement | null>(null)
 
   const chatAthletes = useMemo(
@@ -61,40 +60,19 @@ export default function ChatPage() {
   }, [history])
 
   useEffect(() => {
-    if (!user?.id) return
-    let closed = false
-
-    createChatSocket(false)
-      .then((socket) => {
-        if (closed) {
-          socket.disconnect()
-          return
-        }
-        socketRef.current = socket
-        socket.on('chat:new', (incoming: ChatMessage) => {
-          const selectedPeerId = selectedAthlete?.id
-          if (!selectedPeerId) return
-          const matchPeer = incoming.sender_id === selectedPeerId || incoming.receiver_id === selectedPeerId
-          if (!matchPeer) return
-          setMessages((prev) => (prev.some((m) => m.id === incoming.id) ? prev : [...prev, incoming]))
-        })
-      })
-      .catch((err) => {
-        console.error('[SPPS Chat] socket connection failed:', err)
-      })
-
-    return () => {
-      closed = true
-      if (socketRef.current) {
-        socketRef.current.disconnect()
-        socketRef.current = null
-      }
-    }
-  }, [user?.id, selectedAthlete])
+    if (!user?.id || !peerId) return
+    return subscribeToChatMessages(user.id, peerId, (incoming) => {
+      setMessages((prev) =>
+        prev.some((m) => m.id === incoming.id) ? prev : [...prev, incoming]
+      )
+    })
+  }, [user?.id, peerId])
 
   useEffect(() => {
-    if (!peerId || !socketRef.current) return
-    socketRef.current.emit('chat:mark-read', { peerId, peerRole: 'athlete' })
+    if (!peerId || messages.length === 0) return
+    void markMessagesRead(peerId, 'athlete').catch(() => {
+      // Best-effort only. Unread badges recover on the next successful refresh.
+    })
   }, [peerId, messages.length])
 
   useEffect(() => {

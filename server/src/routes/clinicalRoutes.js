@@ -6,15 +6,6 @@ import { pool } from '../db.js';
 import { requireRoles } from '../middleware/auth.js';
 import { CLINICAL_ICD11_CODES } from '../data/clinicalIcd11.js';
 
-const verifyPasswordSchema = z.object({
-  password: z.string().min(1),
-});
-
-const setupPasswordSchema = z.object({
-  password: z.string().min(8).max(128),
-  currentPassword: z.string().min(1).max(128).optional(),
-});
-
 const clinicalRecordSchema = z.object({
   athleteId: z.string().uuid(),
   diagnosisLabel: z.string().min(2).max(160),
@@ -29,75 +20,11 @@ const clinicalRecordUpdateSchema = clinicalRecordSchema.partial().extend({
   athleteId: z.string().uuid().optional(),
 });
 
-function base64UrlEncode(value) {
-  return Buffer.from(value).toString('base64url');
-}
-
-function base64UrlDecode(value) {
-  return Buffer.from(value, 'base64url').toString('utf8');
-}
-
-function signClinicalToken(practitionerId) {
-  const expiresAt = Date.now() + env.clinicalAccessSessionMinutes * 60 * 1000;
-  const payload = {
-    practitionerId,
-    exp: expiresAt,
-    purpose: 'clinical_access',
-  };
-  const encodedPayload = base64UrlEncode(JSON.stringify(payload));
-  const signature = crypto
-    .createHmac('sha256', env.clinicalAccessTokenSecret)
-    .update(encodedPayload)
-    .digest('base64url');
-
-  return {
-    token: `${encodedPayload}.${signature}`,
-    expiresAt,
-  };
-}
-
-function verifyClinicalToken(token, practitionerId) {
-  if (!token || !token.includes('.')) return { valid: false, reason: 'missing' };
-
-  const [encodedPayload, signature] = token.split('.');
-  const expectedSignature = crypto
-    .createHmac('sha256', env.clinicalAccessTokenSecret)
-    .update(encodedPayload)
-    .digest('base64url');
-
-  const signatureBuffer = Buffer.from(signature);
-  const expectedBuffer = Buffer.from(expectedSignature);
-
-  if (signatureBuffer.length !== expectedBuffer.length) {
-    return { valid: false, reason: 'invalid_signature' };
-  }
-
-  if (!crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
-    return { valid: false, reason: 'invalid_signature' };
-  }
-
-  try {
-    const payload = JSON.parse(base64UrlDecode(encodedPayload));
-    if (payload.purpose !== 'clinical_access') return { valid: false, reason: 'invalid_purpose' };
-    if (payload.practitionerId !== practitionerId) return { valid: false, reason: 'wrong_practitioner' };
-    if (Number(payload.exp || 0) <= Date.now()) return { valid: false, reason: 'expired' };
-    return { valid: true, expiresAt: payload.exp };
-  } catch {
-    return { valid: false, reason: 'invalid_payload' };
-  }
-}
-
 function anonymizePractitionerId(practitionerId) {
   return crypto
     .createHmac('sha256', env.clinicalAuditSalt)
     .update(String(practitionerId))
     .digest('hex');
-}
-
-function getClientIp(req) {
-  return String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')
-    .split(',')[0]
-    .trim();
 }
 
 async function writeClinicalAudit(practitionerId, action, meta = {}) {
@@ -139,136 +66,6 @@ async function hasPractitionerAthleteAccess(practitionerId, athleteId) {
   return legacyRes.rowCount > 0;
 }
 
-async function validateClinicalPassword(practitionerId, password) {
-  const config = await getClinicalPasswordConfig(practitionerId);
-  if (!config.configured || !config.passwordHash) {
-    throw new Error('Clinical access password hash is not configured.');
-  }
-
-  const result = await pool.query(
-    `select crypt($1, $2) = $2 as valid`,
-    [password, config.passwordHash]
-  );
-
-  return Boolean(result.rows[0]?.valid);
-}
-
-async function getClinicalPasswordConfig(practitionerId = null) {
-  if (practitionerId) {
-    try {
-      const result = await pool.query(
-        `select password_hash, updated_at
-         from clinical_access_settings
-         where practitioner_id = $1
-         limit 1`,
-        [practitionerId]
-      );
-
-      if (result.rowCount > 0) {
-        return {
-          configured: true,
-          source: 'database',
-          passwordHash: result.rows[0].password_hash,
-          updatedAt: result.rows[0].updated_at,
-          selfManaged: true,
-          storageReady: true,
-        };
-      }
-    } catch (err) {
-      if (err?.code !== '42P01') {
-        throw err;
-      }
-
-      if (env.clinicalAccessPasswordHash) {
-        return {
-          configured: true,
-          source: 'environment',
-          passwordHash: env.clinicalAccessPasswordHash,
-          updatedAt: null,
-          selfManaged: false,
-          storageReady: true,
-        };
-      }
-
-      return {
-        configured: false,
-        source: null,
-        passwordHash: null,
-        updatedAt: null,
-        selfManaged: true,
-        storageReady: false,
-      };
-    }
-  }
-
-  if (env.clinicalAccessPasswordHash) {
-    return {
-      configured: true,
-      source: 'environment',
-      passwordHash: env.clinicalAccessPasswordHash,
-      updatedAt: null,
-      selfManaged: false,
-      storageReady: true,
-    };
-  }
-
-  return {
-    configured: false,
-    source: null,
-    passwordHash: null,
-    updatedAt: null,
-    selfManaged: true,
-    storageReady: true,
-  };
-}
-
-async function setClinicalPassword(practitionerId, password) {
-  const result = await pool.query(
-    `insert into clinical_access_settings(practitioner_id, password_hash)
-     values ($1, crypt($2, gen_salt('bf', 10)))
-     on conflict (practitioner_id)
-     do update set
-       password_hash = crypt($2, gen_salt('bf', 10)),
-       updated_at = now()
-     returning practitioner_id, updated_at`,
-    [practitionerId, password]
-  );
-
-  return result.rows[0];
-}
-
-async function getRecentFailedAttempts(practitionerId, ipAddress) {
-  const result = await pool.query(
-    `select count(*)::int as count
-     from clinical_access_logs
-     where practitioner_id = $1
-       and action = 'unlock_failed'
-       and timestamp >= now() - make_interval(mins => $2::int)
-       and coalesce(meta->>'ip_address', '') = $3`,
-    [practitionerId, env.clinicalAccessWindowMinutes, ipAddress]
-  );
-  return Number(result.rows[0]?.count || 0);
-}
-
-function requireClinicalSession(req, res, next) {
-  if (!req.user || req.user.role !== 'practitioner') {
-    return res.status(403).json({ message: 'Clinical module is available only to practitioners.' });
-  }
-
-  const gateToken = req.headers['x-clinical-access-token'];
-  const verified = verifyClinicalToken(String(gateToken || ''), req.user.id);
-
-  if (!verified.valid) {
-    return res.status(423).json({ message: 'Clinical access is locked. Re-enter the clinical access password.' });
-  }
-
-  req.clinicalAccess = {
-    expiresAt: verified.expiresAt,
-  };
-
-  return next();
-}
-
 function mapRecord(row) {
   return {
     id: row.id,
@@ -293,113 +90,7 @@ function mapRecord(row) {
 }
 
 export function registerClinicalRoutes(app) {
-  app.get(`${env.apiBasePath}/clinical/access/status`, requireRoles('practitioner'), async (req, res) => {
-    try {
-      const config = await getClinicalPasswordConfig(req.user.id);
-      return res.json({
-        configured: config.configured,
-        source: config.source,
-        selfManaged: config.selfManaged,
-        storageReady: config.storageReady,
-        updatedAt: config.updatedAt,
-      });
-    } catch (err) {
-      console.error('[SPPS API] clinical access status failed:', err);
-      return res.status(500).json({ message: 'Failed to load clinical access status.' });
-    }
-  });
-
-  app.post(`${env.apiBasePath}/clinical/access/setup`, requireRoles('practitioner'), async (req, res) => {
-    try {
-      const payload = setupPasswordSchema.parse(req.body);
-      const config = await getClinicalPasswordConfig(req.user.id);
-
-      if (!config.storageReady) {
-        return res.status(503).json({
-          message: 'Clinical password storage is not ready yet. Apply the latest clinical SQL migration first.',
-        });
-      }
-
-      if (config.source === 'environment') {
-        return res.status(409).json({
-          message: 'Clinical access password is managed by server configuration. Remove CLINICAL_ACCESS_PASSWORD_HASH to manage it inside the app.',
-        });
-      }
-
-      if (config.configured) {
-        if (!payload.currentPassword) {
-          return res.status(400).json({ message: 'Current clinical password is required to change it.' });
-        }
-
-        const currentValid = await validateClinicalPassword(req.user.id, payload.currentPassword);
-        if (!currentValid) {
-          return res.status(401).json({ message: 'Current clinical access password is incorrect.' });
-        }
-      }
-
-      const updated = await setClinicalPassword(req.user.id, payload.password);
-
-      return res.json({
-        configured: true,
-        source: 'database',
-        selfManaged: true,
-        storageReady: true,
-        updatedAt: updated.updated_at,
-      });
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: 'Clinical password must be between 8 and 128 characters.', issues: err.issues });
-      }
-      console.error('[SPPS API] clinical access setup failed:', err);
-      return res.status(500).json({ message: 'Failed to save the clinical access password.' });
-    }
-  });
-
-  app.post(`${env.apiBasePath}/clinical/access/verify`, requireRoles('practitioner'), async (req, res) => {
-    try {
-      const payload = verifyPasswordSchema.parse(req.body);
-      const ipAddress = getClientIp(req);
-      const config = await getClinicalPasswordConfig(req.user.id);
-
-      if (!config.configured) {
-        return res.status(428).json({
-          code: 'clinical_password_not_configured',
-          message: 'Clinical access password has not been configured yet. Set it up first to unlock this module.',
-        });
-      }
-
-      const failedAttempts = await getRecentFailedAttempts(req.user.id, ipAddress);
-
-      if (failedAttempts >= env.clinicalAccessMaxAttempts) {
-        return res.status(429).json({
-          message: `Too many failed clinical access attempts. Try again in ${env.clinicalAccessWindowMinutes} minutes.`,
-        });
-      }
-
-      const valid = await validateClinicalPassword(req.user.id, payload.password);
-      if (!valid) {
-        await writeClinicalAudit(req.user.id, 'unlock_failed', { ip_address: ipAddress });
-        return res.status(401).json({ message: 'Incorrect clinical access password.' });
-      }
-
-      const session = signClinicalToken(req.user.id);
-      await writeClinicalAudit(req.user.id, 'unlock_success', { ip_address: ipAddress, expires_at: session.expiresAt });
-
-      return res.json({
-        token: session.token,
-        expiresAt: session.expiresAt,
-        sessionMinutes: env.clinicalAccessSessionMinutes,
-      });
-    } catch (err) {
-      if (err instanceof z.ZodError) {
-        return res.status(400).json({ message: 'Password is required.', issues: err.issues });
-      }
-      console.error('[SPPS API] clinical access verify failed:', err);
-      return res.status(500).json({ message: 'Failed to verify clinical access password.' });
-    }
-  });
-
-  app.get(`${env.apiBasePath}/clinical/icd-search`, requireRoles('practitioner'), requireClinicalSession, async (req, res) => {
+  app.get(`${env.apiBasePath}/clinical/icd-search`, requireRoles('practitioner'), async (req, res) => {
     try {
       const q = String(req.query.q || '').trim().toLowerCase();
       const limit = Math.min(Math.max(Number(req.query.limit || 15), 1), 50);
@@ -437,7 +128,7 @@ export function registerClinicalRoutes(app) {
     }
   });
 
-  app.get(`${env.apiBasePath}/clinical/records`, requireRoles('practitioner'), requireClinicalSession, async (req, res) => {
+  app.get(`${env.apiBasePath}/clinical/records`, requireRoles('practitioner'), async (req, res) => {
     try {
       const athleteId = String(req.query.athleteId || '').trim();
       const status = String(req.query.status || '').trim();
@@ -493,7 +184,7 @@ export function registerClinicalRoutes(app) {
     }
   });
 
-  app.post(`${env.apiBasePath}/clinical/records`, requireRoles('practitioner'), requireClinicalSession, async (req, res) => {
+  app.post(`${env.apiBasePath}/clinical/records`, requireRoles('practitioner'), async (req, res) => {
     try {
       const payload = clinicalRecordSchema.parse(req.body);
       const hasAccess = await hasPractitionerAthleteAccess(req.user.id, payload.athleteId);
@@ -536,7 +227,7 @@ export function registerClinicalRoutes(app) {
     }
   });
 
-  app.patch(`${env.apiBasePath}/clinical/records/:recordId`, requireRoles('practitioner'), requireClinicalSession, async (req, res) => {
+  app.patch(`${env.apiBasePath}/clinical/records/:recordId`, requireRoles('practitioner'), async (req, res) => {
     try {
       const payload = clinicalRecordUpdateSchema.parse(req.body);
 
@@ -599,7 +290,7 @@ export function registerClinicalRoutes(app) {
     }
   });
 
-  app.post(`${env.apiBasePath}/clinical/records/:recordId/archive`, requireRoles('practitioner'), requireClinicalSession, async (req, res) => {
+  app.post(`${env.apiBasePath}/clinical/records/:recordId/archive`, requireRoles('practitioner'), async (req, res) => {
     try {
       const result = await pool.query(
         `update clinical_records
